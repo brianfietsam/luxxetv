@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LuxxeTV</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Luxxe<span>TV</span></h1>
+  <nav id="tabs">
+    <button data-tab="live" class="on">Live</button>
+    <button data-tab="recordings">Recordings</button>
+    <button data-tab="schedule">Schedule</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div id="recbadge" hidden></div>
+</header>
+
+<div id="login" hidden>
+  <form id="loginForm">
+    <h2>Sign in</h2>
+    <input id="loginPw" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="primary">Enter</button>
+    <p id="loginErr" class="err"></p>
+  </form>
+</div>
+
+<main>
+  <section id="player" hidden>
+    <video id="video" controls autoplay playsinline></video>
+    <div class="bar">
+      <div><b id="pTitle"></b><div id="pSub" class="muted"></div></div>
+      <div class="actions" id="pActions"></div>
+    </div>
+    <div id="pStatus" class="muted"></div>
+  </section>
+
+  <section id="tab-live" class="tab">
+    <div class="filters">
+      <input id="q" type="search" placeholder="Search channels…">
+      <select id="cat"><option value="">All categories</option></select>
+    </div>
+    <div id="channels" class="grid"></div>
+    <button id="more" class="wide" hidden>Show more</button>
+  </section>
+
+  <section id="tab-recordings" class="tab" hidden>
+    <div id="active"></div>
+    <div id="recList"></div>
+  </section>
+
+  <section id="tab-schedule" class="tab" hidden>
+    <form id="schedForm" class="card">
+      <h3>Schedule a recording</h3>
+      <input id="sq" type="search" placeholder="Find channel…">
+      <select id="sch" size="4"></select>
+      <label>Start <input id="sStart" type="datetime-local" required></label>
+      <label>End <input id="sEnd" type="datetime-local" required></label>
+      <label>Title (optional) <input id="sTitle" type="text"></label>
+      <label>Repeat
+        <select id="sRepeat"><option value="none">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
+      </label>
+      <button class="primary">Add schedule</button>
+      <p id="schedErr" class="err"></p>
+    </form>
+    <div id="schedList"></div>
+  </section>
+
+  <section id="tab-settings" class="tab" hidden>
+    <form id="setForm" class="card">
+      <h3>Playlist</h3>
+      <label>Type <select id="sType"><option value="xtream">Xtream Codes</option><option value="m3u">M3U URL</option></select></label>
+      <div id="xtreamF">
+        <label>Server URL <input id="sServer" placeholder="http://provider.example:8080"></label>
+        <label>Username <input id="sUser" autocomplete="off"></label>
+        <label>Password <input id="sPass" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
+      </div>
+      <div id="m3uF" hidden><label>M3U URL <input id="sM3u"></label></div>
+      <button type="button" id="refresh">Test &amp; reload channel list</button>
+      <p id="refreshMsg" class="muted"></p>
+
+      <h3>Recording</h3>
+      <label>Save folder
+        <span class="row"><input id="sDir"><button type="button" id="browse" hidden>Browse…</button></span>
+      </label>
+      <label>File size / quality
+        <select id="sRecQ">
+          <option value="small">Small — 480p (~0.4 GB/hour)</option>
+          <option value="balanced">Balanced — 720p (~0.9 GB/hour)</option>
+          <option value="high">High — 1080p (~2 GB/hour)</option>
+          <option value="copy">Original (no re-encode, large, .mkv)</option>
+        </select>
+      </label>
+      <label>Start early (min) <input id="sPadB" type="number" min="0" max="30"></label>
+      <label>Stop late (min) <input id="sPadA" type="number" min="0" max="60"></label>
+
+      <h3>Web player (Tesla / phone)</h3>
+      <label>Live stream quality
+        <select id="sLiveQ"><option>480p</option><option>720p</option><option>1080p</option><option value="copy">Passthrough video (needs H.264 source)</option></select>
+      </label>
+      <label>Web password <input id="sWebPw" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
+      <label class="chk"><input id="sClearPw" type="checkbox"> Remove password (LAN-only access)</label>
+      <label>Port <input id="sPort" type="number"></label>
+      <label class="chk"><input id="sListen" type="checkbox"> Allow other devices on my network</label>
+
+      <h3>Encoding</h3>
+      <label>Encoder <select id="sEnc"></select></label>
+      <label>ffmpeg path (blank = auto) <input id="sFf"></label>
+      <p id="sys" class="muted"></p>
+      <button class="primary">Save settings</button>
+      <p id="setMsg" class="muted"></p>
+    </form>
+    <div id="urls" class="card"></div>
+  </section>
+</main>
+<script src="/vendor/hls.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
