@@ -64,6 +64,18 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   ok((await j('/api/guide?only=0')).rows.length === 1, 'hidden categories excluded from guide');
   await post('/api/categories/hidden', { hidden: [] }, 'PUT');
 
+  // favorites: stored server-side, listed as a pseudo-category even with no guide data, ignoring hidden categories
+  await j('/api/favorites/2', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"on":true}' });
+  ok(JSON.stringify(await j('/api/favorites')) === '["2"]', 'favorite saved');
+  await post('/api/categories/hidden', { hidden: ['Other'] }, 'PUT');
+  const fg = await j('/api/guide?cat=__fav__');
+  ok(fg.rows.length === 1 && fg.rows[0].name === 'Second Channel' && fg.rows[0].progs.length === 0, 'favorites guide lists the channel even without guide data or in a hidden category');
+  await post('/api/categories/hidden', { hidden: [] }, 'PUT');
+  await j('/api/favorites/2', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"on":false}' });
+  ok((await j('/api/favorites')).length === 0, 'favorite removed');
+  const e1 = await j('/api/epg/1');
+  ok(e1.length > 3 && e1[0].title.includes('& Friends'), 'player EPG uses the XMLTV guide (hours ahead)');
+
   await post('/api/settings', { padBeforeMin: 0, padAfterMin: 0 }, 'PUT');
   const sch = await post('/api/schedules', { channelId: '1', start: new Date(Date.now() + 2000).toISOString(), end: new Date(Date.now() + 60000).toISOString(), title: 'Scheduled Test' });
   ok(sch.id, 'programme scheduled');

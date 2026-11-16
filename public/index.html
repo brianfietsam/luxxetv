@@ -1,108 +1,96 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="auto" data-accent="teal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>LuxxeTV</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>Luxxe<span>TV</span></h1>
-  <nav id="tabs">
-    <button data-tab="live" class="on">Live</button>
-    <button data-tab="guide">Guide</button>
-    <button data-tab="recordings">Recordings</button>
-    <button data-tab="schedule">Schedule</button>
-    <button data-tab="settings">Settings</button>
+
+<header id="top">
+  <h1 class="brand">Luxxe<span>TV</span></h1>
+  <nav id="pivot" aria-label="Sections">
+    <button data-view="guide" class="on">guide</button>
+    <button data-view="recordings">recordings</button>
+    <button data-view="schedule">schedule</button>
+    <button data-view="settings">settings</button>
   </nav>
-  <div id="recbadge" hidden></div>
+  <div id="recbadge" hidden><i class="dot"></i><span id="recText"></span></div>
 </header>
 
-<div id="login" hidden>
-  <form id="loginForm">
-    <h2>Sign in</h2>
-    <input id="loginPw" type="password" placeholder="Password" autocomplete="current-password">
-    <button class="primary">Enter</button>
-    <p id="loginErr" class="err"></p>
-  </form>
-</div>
-
-<div id="progModal" hidden>
-  <div class="card" id="progCard">
-    <b id="mTitle"></b>
-    <div id="mWhen" class="muted"></div>
-    <div id="mDesc"></div>
-    <label>Repeat
-      <select id="mRepeat"><option value="none">Just this showing</option><option value="daily">Every day at this time</option><option value="weekly">Every week at this time</option></select>
-    </label>
-    <div class="row" id="mActions"></div>
-    <p id="mMsg" class="muted"></p>
-  </div>
-</div>
-
 <main>
-  <section id="player" hidden>
-    <video id="video" controls autoplay playsinline></video>
-    <div class="bar">
-      <div><b id="pTitle"></b><div id="pSub" class="muted"></div></div>
-      <div class="actions" id="pActions"></div>
+  <!-- ============ GUIDE ============ -->
+  <section id="view-guide" class="view">
+    <aside id="rail">
+      <input id="catFind" type="search" placeholder="filter categories" aria-label="Filter categories">
+      <nav id="cats" aria-label="Categories"></nav>
+    </aside>
+
+    <div id="pane">
+      <div class="pane-head">
+        <h1 id="paneTitle">favorites</h1>
+        <div class="tools">
+          <input id="gq" type="search" placeholder="search all channels  ( / )" aria-label="Search channels">
+          <div class="nav">
+            <button type="button" id="gPrev" aria-label="Earlier">‹ earlier</button>
+            <button type="button" id="gNow">now</button>
+            <button type="button" id="gNext" aria-label="Later">later ›</button>
+            <select id="gDay" aria-label="Day"></select>
+            <label class="chk"><input type="checkbox" id="gOnly" checked><span>only channels with guide data</span></label>
+          </div>
+        </div>
+      </div>
+      <div id="rows" tabindex="-1"></div>
     </div>
-    <div id="pStatus" class="muted"></div>
   </section>
 
-  <section id="tab-live" class="tab">
-    <div class="filters">
-      <input id="q" type="search" placeholder="Search channels…">
-      <select id="cat"><option value="">All categories</option></select>
-    </div>
-    <div id="channels" class="grid"></div>
-    <button id="more" class="wide" hidden>Show more</button>
-  </section>
-
-  <section id="tab-guide" class="tab" hidden>
-    <div class="filters">
-      <input id="gq" type="search" placeholder="Search channels…">
-      <select id="gcat"><option value="">All categories</option></select>
-    </div>
-    <div class="filters">
-      <button type="button" id="gPrev">◀ Earlier</button>
-      <button type="button" id="gNow">Now</button>
-      <button type="button" id="gNext">Later ▶</button>
-      <select id="gDay"></select>
-      <label class="chk"><input type="checkbox" id="gOnly" checked> Only channels with guide data</label>
-    </div>
-    <div id="gMsg" class="muted"></div>
-    <div id="guide"></div>
-    <button id="gMore" class="wide" hidden>Load more channels</button>
-  </section>
-
-  <section id="tab-recordings" class="tab" hidden>
+  <!-- ============ RECORDINGS ============ -->
+  <section id="view-recordings" class="view page" hidden>
+    <h1 class="display">recordings</h1>
     <div id="active"></div>
     <div id="recList"></div>
   </section>
 
-  <section id="tab-schedule" class="tab" hidden>
-    <form id="schedForm" class="card">
-      <h3>Schedule a recording</h3>
-      <p class="muted">Tip: use the Guide tab to pick a program and schedule it in one tap.</p>
-      <input id="sq" type="search" placeholder="Find channel…">
-      <select id="sch" size="4"></select>
-      <label>Start <input id="sStart" type="datetime-local" required></label>
-      <label>End <input id="sEnd" type="datetime-local" required></label>
+  <!-- ============ SCHEDULE ============ -->
+  <section id="view-schedule" class="view page" hidden>
+    <h1 class="display">schedule</h1>
+    <p class="muted lede">The quickest way to schedule is the guide: right-click (or long-press) any program.</p>
+    <form id="schedForm" class="panel">
+      <h2>new recording</h2>
+      <label>Channel <input id="sq" type="search" placeholder="search channels…"></label>
+      <select id="sch" size="4" aria-label="Matching channels"></select>
+      <div class="two">
+        <label>Start <input id="sStart" type="datetime-local" required></label>
+        <label>End <input id="sEnd" type="datetime-local" required></label>
+      </div>
       <label>Title (optional) <input id="sTitle" type="text"></label>
       <label>Repeat
         <select id="sRepeat"><option value="none">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
       </label>
-      <button class="primary">Add schedule</button>
+      <button class="solid">add to schedule</button>
       <p id="schedErr" class="err"></p>
     </form>
     <div id="schedList"></div>
   </section>
 
-  <section id="tab-settings" class="tab" hidden>
-    <form id="setForm" class="card">
-      <h3>Playlist</h3>
+  <!-- ============ SETTINGS ============ -->
+  <section id="view-settings" class="view page" hidden>
+    <h1 class="display">settings</h1>
+
+    <div class="panel" hidden>
+      <h2>this device</h2>
+      <div class="field"><span class="lbl">Accent color</span><div id="accents" class="swatches" role="radiogroup" aria-label="Accent color"></div></div>
+      <div class="field"><span class="lbl">Appearance</span>
+        <div id="themes" class="seg" role="radiogroup" aria-label="Appearance">
+          <button type="button" data-theme="auto">auto</button><button type="button" data-theme="dark">night</button><button type="button" data-theme="light">day</button>
+        </div>
+      </div>
+    </div>
+
+    <form id="setForm" class="panel">
+      <h2>playlist</h2>
       <label>Type <select id="sType"><option value="xtream">Xtream Codes</option><option value="m3u">M3U URL</option></select></label>
       <div id="xtreamF">
         <label>Server URL <input id="sServer" placeholder="http://provider.example:8080"></label>
@@ -110,57 +98,89 @@
         <label>Password <input id="sPass" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
       </div>
       <div id="m3uF" hidden><label>M3U URL <input id="sM3u"></label></div>
-      <label>TV guide URL (XMLTV) – optional, blank = automatic <input id="sEpg" placeholder="http://…/xmltv.php?…"></label>
-      <button type="button" id="refresh">Test &amp; reload channel list</button>
+      <label>TV guide URL (XMLTV), optional <input id="sEpg" placeholder="blank = automatic"></label>
+      <button type="button" id="refresh">test &amp; reload channel list</button>
       <p id="refreshMsg" class="muted"></p>
 
       <div id="catBox">
-        <button type="button" id="manageCats">Show / hide categories…</button>
+        <button type="button" id="manageCats">show / hide categories</button>
         <p id="catSummary" class="muted"></p>
         <div id="catPanel" hidden>
-          <input id="catFilter" type="search" placeholder="Filter categories…">
+          <input id="catFilter" type="search" placeholder="filter categories">
           <div class="row">
-            <button type="button" id="catShowAll">Show all</button>
-            <button type="button" id="catHideAll">Hide all</button>
+            <button type="button" id="catShowAll">show all</button>
+            <button type="button" id="catHideAll">hide all</button>
           </div>
           <div id="catList"></div>
         </div>
       </div>
 
-      <h3>Recording</h3>
+      <h2>recording</h2>
       <label>Save folder
-        <span class="row"><input id="sDir"><button type="button" id="browse" hidden>Browse…</button></span>
+        <span class="row"><input id="sDir"><button type="button" id="browse" hidden>browse…</button></span>
       </label>
       <label>File size / quality
         <select id="sRecQ">
-          <option value="small">Small — 480p (~0.4 GB/hour)</option>
-          <option value="balanced">Balanced — 720p (~0.9 GB/hour)</option>
-          <option value="high">High — 1080p (~2 GB/hour)</option>
+          <option value="small">Small: 480p (~0.4 GB/hour)</option>
+          <option value="balanced">Balanced: 720p (~0.9 GB/hour)</option>
+          <option value="high">High: 1080p (~2 GB/hour)</option>
           <option value="copy">Original (no re-encode, large, .mkv)</option>
         </select>
       </label>
-      <label>Start early (min) <input id="sPadB" type="number" min="0" max="30"></label>
-      <label>Stop late (min) <input id="sPadA" type="number" min="0" max="60"></label>
+      <div class="two">
+        <label>Start early (min) <input id="sPadB" type="number" min="0" max="30"></label>
+        <label>Stop late (min) <input id="sPadA" type="number" min="0" max="60"></label>
+      </div>
 
-      <h3>Web player (Tesla / phone)</h3>
+      <h2>web player</h2>
       <label>Live stream quality
         <select id="sLiveQ"><option>480p</option><option>720p</option><option>1080p</option><option value="copy">Passthrough video (needs H.264 source)</option></select>
       </label>
       <label>Web password <input id="sWebPw" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
-      <label class="chk"><input id="sClearPw" type="checkbox"> Remove password (LAN-only access)</label>
-      <label>Port <input id="sPort" type="number"></label>
-      <label class="chk"><input id="sListen" type="checkbox"> Allow other devices on my network</label>
+      <label class="chk"><input id="sClearPw" type="checkbox"><span>Remove password (LAN-only access)</span></label>
+      <div class="two">
+        <label>Port <input id="sPort" type="number"></label>
+        <label class="chk"><input id="sListen" type="checkbox"><span>Allow other devices on my network</span></label>
+      </div>
 
-      <h3>Encoding</h3>
+      <h2>encoding</h2>
       <label>Encoder <select id="sEnc"></select></label>
       <label>ffmpeg path (blank = auto) <input id="sFf"></label>
       <p id="sys" class="muted"></p>
-      <button class="primary">Save settings</button>
+      <button class="solid">save settings</button>
       <p id="setMsg" class="muted"></p>
     </form>
-    <div id="urls" class="card"></div>
+    <div id="urls" class="panel"></div>
   </section>
 </main>
+
+<!-- ============ PLAYER ============ -->
+<div id="stage" hidden role="dialog" aria-modal="true" aria-labelledby="stTitle">
+  <div class="stage-top">
+    <button id="stClose" class="back" aria-label="Close player">‹</button>
+    <h2 id="stTitle" class="display"></h2>
+  </div>
+  <div class="stage-body"><video id="video" controls autoplay playsinline></video></div>
+  <div class="stage-info">
+    <div id="stStatus" class="muted" aria-live="polite"></div>
+    <div id="stNext" class="next"></div>
+  </div>
+  <div class="stage-actions" id="stActions"></div>
+</div>
+
+<!-- ============ ACTION SHEET (right-click / long-press) ============ -->
+<div id="menu" hidden role="menu"></div>
+<div id="toast" hidden role="status"></div>
+
+<div id="login" hidden>
+  <form id="loginForm">
+    <h2 class="display">sign in</h2>
+    <input id="loginPw" type="password" placeholder="password" autocomplete="current-password" aria-label="Password">
+    <button class="solid">enter</button>
+    <p id="loginErr" class="err"></p>
+  </form>
+</div>
+
 <script src="/vendor/hls.min.js"></script>
 <script src="app.js"></script>
 </body>

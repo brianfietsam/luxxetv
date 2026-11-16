@@ -99,7 +99,24 @@ async function start({ dataDir, port }) {
   app.get('/api/channels', wrap(async (req, res) => {
     res.json(await sources.query({ cat: req.query.cat, q: req.query.q, offset: +req.query.offset || 0, limit: Math.min(+req.query.limit || 200, 500) }));
   }));
-  app.get('/api/epg/:id', wrap(async (req, res) => res.json(await sources.epg(req.params.id))));
+  app.get('/api/epg/:id', wrap(async (req, res) => {
+    // Prefer the downloaded XMLTV guide (hours ahead); fall back to the provider's short EPG.
+    const ch = await sources.getChannel(req.params.id);
+    const now = Date.now();
+    const list = ch && epg.status().ready ? epg.get(ch.epgId, now - 3600000, now + 12 * 3600000) : [];
+    if (list.length) return res.json(list.map((p) => ({ title: p.t, desc: p.d, start: p.s, end: p.e })));
+    res.json(await sources.epg(req.params.id));
+  }));
+
+  // ---- favorites (stored on the PC so every device shares them) ----
+  app.get('/api/favorites', (req, res) => res.json(cfg.get().favorites || []));
+  app.put('/api/favorites/:id', wrap(async (req, res) => {
+    const id = String(req.params.id);
+    const set = new Set(cfg.get().favorites || []);
+    if (req.body.on) set.add(id); else set.delete(id);
+    cfg.update({ favorites: [...set] });
+    res.json({ ok: true, count: set.size });
+  }));
   app.post('/api/refresh', wrap(async (req, res) => {
     sources.invalidate(); epg.invalidate();
     const d = await sources.ensure(true);
@@ -114,7 +131,7 @@ async function start({ dataDir, port }) {
     const d = await sources.ensure();
     const from = +req.query.from || Date.now();
     const to = from + (Math.min(+req.query.hours || 6, 24)) * 3600000;
-    const only = req.query.only !== '0';
+    const only = req.query.cat !== '__fav__' && req.query.only !== '0';   // favorites always list every channel
     const items = (await sources.query({ cat: req.query.cat, q: req.query.q, offset: 0, limit: 1e9 })).items;
     const rows = [];
     for (const it of items) {

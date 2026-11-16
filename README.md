@@ -6,7 +6,10 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
 
 ## Features
 - Xtream Codes (server/user/pass) or M3U URL; category filter, search, EPG now/next
-- **TV guide** (XMLTV from your provider, ~3 days ahead): scrolling time grid; tap a program to record it once, daily or weekly, or to watch it if it is on now. Scheduled programs are highlighted. Set a custom guide URL in Settings if your provider has none.
+- **Guide-first layout:** categories in a left rail (Favorites on top), the TV guide on the right with 2-3 hours of program titles per channel. Click a channel to watch; right-click (or tap / long-press) a program to record it once, daily or weekly. Scheduled programs show a red dot. Guide data is the provider's XMLTV feed (~3 days ahead); set a custom guide URL in Settings if your provider has none.
+- **Favorites:** star any channel; stored on the PC, so every device sees the same list
+- **Look:** Metro-style flat tiles, giant light lowercase headings, one accent color (pick it per device in Settings, plus night/day). Dim by default for a dark car cabin
+- Keyboard: `/` search, `Esc` close, Up/Down change channel in the player
 - **Show/hide categories** in Settings, under the playlist; applies to Live, Guide and every device
 - **Record now** (until stopped / 30m–3h) or **schedule** (once, daily, weekly, with start/stop padding)
 - Recordings go to a folder **you choose**, transcoded with ffmpeg to H.264/AAC MP4:

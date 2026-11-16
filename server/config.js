@@ -18,6 +18,7 @@ const DEFAULTS = {
   padAfterMin: 2,
   maxLiveSessions: 2,
   hiddenCategories: [],
+  favorites: [],
   epgUrl: '',                // optional XMLTV override; blank = auto
   userAgent: 'VLC/3.0.20 LibVLC/3.0.20',
   sessionSecret: '',

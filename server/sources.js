@@ -103,11 +103,12 @@ class Sources {
     const d = await this.ensure();
     const needle = (q || '').toLowerCase().trim();
     const hidden = new Set(this.cfg.get().hiddenCategories || []);
+    const favs = cat === '__fav__' ? new Set(this.cfg.get().favorites || []) : null;
     const out = [];
     let total = 0;
     for (let i = 0; i < d.channels.length; i++) {
       const ch = d.channels[i];
-      if (cat ? ch.cat !== cat : hidden.has(ch.cat)) continue;
+      if (favs) { if (!favs.has(ch.id)) continue; } else if (cat ? ch.cat !== cat : hidden.has(ch.cat)) continue;
       if (needle && !d.lower[i].includes(needle)) continue;
       if (total >= offset && out.length < limit) out.push({ id: ch.id, name: ch.name, cat: ch.cat, logo: ch.logo });
       total++;
