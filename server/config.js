@@ -11,6 +11,8 @@ const DEFAULTS = {
   liveQuality: '720p',       // 480p | 720p | 1080p | copy
   encoder: 'libx264',        // libx264 | h264_nvenc | h264_qsv | h264_amf
   ffmpegPath: '',
+  commSkip: 'off',           // off | cut (remove commercials after recording, needs comskip)
+  comskipPath: '',
   port: 8484,
   listenAll: true,
   webPassword: '',

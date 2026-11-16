@@ -139,7 +139,7 @@ function initDays() {
     days.append(el('option', { value: i === 0 ? 'now' : +d, textContent: i === 0 ? 'today' : i === 1 ? 'tomorrow' : d.toLocaleDateString([], { weekday: 'long' }).toLowerCase() }));
   }
 }
-const nowStart = () => snap30(Date.now() - 30 * 60000);
+const nowStart = () => snap30(Date.now());
 const clampFrom = (ms) => Math.min(Math.max(ms, snap30(Date.now() - HOUR)), Date.now() + 70 * HOUR);
 function jump(ms) { gFrom = clampFrom(ms); loadGuide(true); }
 $('#gNow').onclick = () => { $('#gDay').value = 'now'; jump(nowStart()); };
@@ -375,6 +375,12 @@ function zap(dir) {
   if (n) playChannel(n);
 }
 
+async function nowTitle(id) {
+  try {
+    const e = await api('/api/epg/' + encodeURIComponent(id)), now = Date.now();
+    return (e.find((x) => x.start <= now && x.end > now) || {}).title || '';
+  } catch { return ''; }
+}
 function playChannel(ch) {
   stageChan = ch;
   const favBtn = el('button', { type: 'button', textContent: favs.has(ch.id) ? '★ favorite' : '☆ favorite' });
@@ -386,7 +392,7 @@ function playChannel(ch) {
     ...[['until I stop', 0], ['30 minutes', 30], ['1 hour', 60], ['2 hours', 120], ['3 hours', 180]].map(([l, v]) => el('option', { value: v, textContent: l })));
   const rec = el('button', { type: 'button', className: 'rec', textContent: '● record' });
   rec.onclick = async () => {
-    try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +sel.value } }); rec.textContent = '● recording'; toast('Recording ' + ch.name); pollStatus(); }
+    try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +sel.value, title: await nowTitle(ch.id) } }); rec.textContent = '● recording'; toast('Recording ' + ch.name); pollStatus(); }
     catch (e) { toast(e.message, true); }
   };
   openStage(ch.name, [favBtn, sel, rec,
@@ -420,18 +426,31 @@ addEventListener('keydown', (e) => {
 async function pollStatus() {
   try {
     const s = await api('/api/record/status');
-    $('#recbadge').hidden = !s.active.length;
-    $('#recText').textContent = `recording ${s.active.length}`;
+    const bt = `recording ${s.active.length}`;
+    if ($('#recbadge').hidden !== !s.active.length) $('#recbadge').hidden = !s.active.length;
+    if ($('#recText').textContent !== bt) $('#recText').textContent = bt;
     if (view === 'recordings') renderActive(s);
   } catch { /* ignore */ }
 }
+let activeSig = '';
+function activeInfo(r) {
+  return `${fmtSize(r.bytes)} · started ${stamp(r.startedAt)}${r.endAt ? ' · ends ' + clock(r.endAt) : ''}${r.status === 'processing' ? ' · removing commercials…' : ''}`;
+}
 function renderActive(s) {
+  // rebuild only when recordings start/stop; otherwise patch text so the stop button doesn't flicker
+  const sig = s.active.map((r) => r.id + r.status).join() + '|' + s.recent.filter((r) => r.error).slice(0, 3).map((r) => r.id).join();
+  if (sig === activeSig) {
+    s.active.forEach((r) => { const n = document.querySelector('.rec-' + r.id); if (n && n.textContent !== activeInfo(r)) n.textContent = activeInfo(r); });
+    return;
+  }
+  activeSig = sig;
   $('#active').replaceChildren(
     ...s.active.map((r) => el('div', { className: 'item live' },
-      el('div', { className: 't' }, el('b', { textContent: r.name + (r.title ? ' · ' + r.title : '') }),
-        el('div', { className: 'muted', textContent: `${fmtSize(r.bytes)} · started ${stamp(r.startedAt)}${r.endAt ? ' · ends ' + clock(r.endAt) : ''}` })),
+      el('div', { className: 't' }, el('b', { textContent: r.title || r.name }),
+        r.title ? el('div', { className: 'muted', textContent: r.name }) : null,
+        el('div', { className: 'muted rec-' + r.id, textContent: activeInfo(r) })),
       el('button', { type: 'button', textContent: 'stop', onclick: async () => { await api(`/api/record/${r.id}/stop`, { method: 'POST' }); setTimeout(() => { pollStatus(); loadRecordings(); }, 1500); } }))),
-    ...s.recent.filter((r) => r.error).slice(0, 3).map((r) => el('div', { className: 'item' }, el('div', { className: 't' }, el('span', { className: 'err', textContent: `${r.name}: ${r.error}` })))));
+    ...s.recent.filter((r) => r.error).slice(0, 3).map((r) => el('div', { className: 'item' }, el('div', { className: 't' }, el('span', { className: 'err', textContent: `${r.title || r.name}: ${r.error}` })))));
 }
 async function loadRecordings() {
   const list = await api('/api/recordings').catch(() => []);
@@ -476,8 +495,8 @@ async function loadSchedules() {
   }
   const l = await api('/api/schedules').catch(() => []);
   $('#schedList').replaceChildren(...(l.length ? l.map((s) => el('div', { className: 'item' },
-    el('div', { className: 't' }, el('b', { textContent: s.channelName + (s.title ? ' · ' + s.title : '') }),
-      el('div', { className: 'muted', textContent: `${stamp(s.start)} to ${clock(s.end)} · ${s.repeat === 'none' ? 'once' : s.repeat}${s.lastError ? ' · ' + s.lastError : ''}` })),
+    el('div', { className: 't' }, el('b', { textContent: s.title || s.channelName }),
+      el('div', { className: 'muted', textContent: `${stamp(s.start)} to ${clock(s.end)} · ${s.repeat === 'none' ? 'once' : s.repeat} · ${s.channelName}${s.lastError ? ' · ' + s.lastError : ''}` })),
     el('button', { type: 'button', textContent: 'remove', onclick: async () => { await api('/api/schedules/' + s.id, { method: 'DELETE' }); loadSchedules(); } })))
     : [el('div', { className: 'empty' }, el('div', { className: 'big', textContent: 'nothing scheduled' }))]));
 }
@@ -541,7 +560,7 @@ async function loadSettings() {
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved, leave blank to keep)' : 'none (LAN only)';
-  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath; $('#sEpg').value = c.epgUrl || '';
+  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath; $('#sComm').value = c.commSkip || 'off'; $('#sCs').value = c.comskipPath || ''; $('#sEpg').value = c.epgUrl || '';
   $('#sEnc').replaceChildren(...(sys.encoders.length ? sys.encoders : ['libx264']).map((e) => el('option', { value: e, textContent: e === 'libx264' ? 'libx264 (CPU, best compression)' : e + ' (GPU)' })));
   $('#sEnc').value = c.encoder;
   $('#sys').textContent = sys.ffmpeg ? `✔ ${sys.ffmpeg}` : '✘ ffmpeg not found: install it or set the path above.';
@@ -563,7 +582,7 @@ async function saveSettings(quiet) {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,
-    epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), encoder: $('#sEnc').value,
+    epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), commSkip: $('#sComm').value, comskipPath: $('#sCs').value.trim(), encoder: $('#sEnc').value,
     webPassword: $('#sWebPw').value, clearWebPassword: $('#sClearPw').checked,
   };
   const r = await api('/api/settings', { method: 'PUT', body });
