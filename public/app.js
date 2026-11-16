@@ -31,6 +31,8 @@ function setTab(t) {
   tab = t;
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
   document.querySelectorAll('.tab').forEach((s) => (s.hidden = s.id !== 'tab-' + t));
+  if (t === 'live' && dirtyLive) { dirtyLive = false; loadChannels(true); }
+  if (t === 'guide' && (dirtyGuide || !gTrack)) { dirtyGuide = false; loadGuide(true); }
   if (t === 'recordings') loadRecordings();
   if (t === 'schedule') loadSchedules();
   if (t === 'settings') loadSettings();
@@ -114,9 +116,142 @@ let qt;
 $('#q').oninput = () => { clearTimeout(qt); qt = setTimeout(() => loadChannels(true), 250); };
 $('#cat').onchange = () => loadChannels(true);
 $('#more').onclick = () => loadChannels(false);
-async function loadCats() {
-  try { (await api('/api/categories')).sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => $('#cat').append(el('option', { value: c.name, textContent: c.name }))); } catch { /* shown via channels */ }
+// show/hide categories (saved on the PC, so it applies to every device)
+let allCats = [];
+async function saveHidden() {
+  await api('/api/categories/hidden', { method: 'PUT', body: { hidden: allCats.filter((c) => c.hidden).map((c) => c.name) } });
+  dirtyLive = dirtyGuide = true; catSummary(); loadCats();
 }
+function renderCatPanel() {
+  const f = $('#catFilter').value.toLowerCase();
+  $('#catList').replaceChildren(...allCats.filter((c) => c.name.toLowerCase().includes(f)).map((c) => {
+    const cb = el('input', { type: 'checkbox', checked: !c.hidden, onchange: async () => { c.hidden = !cb.checked; await saveHidden(); } });
+    return el('label', {}, cb, el('span', { textContent: c.name }), el('small', { textContent: c.count }));
+  }));
+}
+const catSummary = () => { $('#catSummary').textContent = allCats.length ? `${allCats.filter((c) => !c.hidden).length} of ${allCats.length} categories shown` : ''; };
+var dirtyLive = false, dirtyGuide = false;   // lists need a reload after category changes
+$('#manageCats').onclick = async () => {
+  const p = $('#catPanel');
+  if (!p.hidden) { p.hidden = true; return; }
+  try {
+    allCats = (await api('/api/categories?all=1')).sort((a, b) => a.name.localeCompare(b.name));
+    $('#catFilter').value = ''; renderCatPanel(); catSummary(); p.hidden = false;
+  } catch (e) { $('#catSummary').textContent = 'Save your playlist settings and press "Test & reload" first (' + e.message + ')'; }
+};
+$('#catFilter').oninput = renderCatPanel;
+const bulk = (hide) => async () => {
+  const f = $('#catFilter').value.toLowerCase();
+  allCats.forEach((c) => { if (c.name.toLowerCase().includes(f)) c.hidden = hide; });
+  await saveHidden(); renderCatPanel();
+};
+$('#catShowAll').onclick = bulk(false);
+$('#catHideAll').onclick = bulk(true);
+async function loadCats() {
+  for (const sel of [$('#cat'), $('#gcat')]) sel.replaceChildren(el('option', { value: '', textContent: 'All categories' }));
+  try {
+    (await api('/api/categories')).sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => {
+      $('#cat').append(el('option', { value: c.name, textContent: c.name }));
+      $('#gcat').append(el('option', { value: c.name, textContent: c.name }));
+    });
+  } catch { /* shown via channels */ }
+}
+
+// ---------- TV guide ----------
+const PPM = 5;   // pixels per minute
+const GUIDE_HOURS = 6;
+let gFrom = 0, gOffset = 0, gLoading = false, gSched = [], gTrack = null;
+const snap30 = (ms) => { const d = new Date(ms); d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0); return +d; };
+const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function initGuide() {
+  const days = $('#gDay'); days.replaceChildren();
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(); d.setDate(d.getDate() + i); d.setHours(0, 0, 0, 0);
+    days.append(el('option', { value: i === 0 ? 'now' : +d, textContent: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString([], { weekday: 'long' }) }));
+  }
+}
+function guideStart(ms) { gFrom = Math.max(snap30(Date.now() - 3600000), ms); loadGuide(true); }
+$('#gNow').onclick = () => { $('#gDay').value = 'now'; guideStart(snap30(Date.now() - 1800000)); };
+$('#gPrev').onclick = () => guideStart(gFrom - 3 * 3600000);
+$('#gNext').onclick = () => guideStart(gFrom + 3 * 3600000);
+$('#gDay').onchange = () => guideStart($('#gDay').value === 'now' ? snap30(Date.now() - 1800000) : +$('#gDay').value);
+let gqt; $('#gq').oninput = () => { clearTimeout(gqt); gqt = setTimeout(() => loadGuide(true), 300); };
+$('#gcat').onchange = () => loadGuide(true);
+$('#gOnly').onchange = () => loadGuide(true);
+$('#gMore').onclick = () => loadGuide(false);
+
+async function loadGuide(reset) {
+  if (gLoading) return; gLoading = true;
+  if (!gFrom) gFrom = snap30(Date.now() - 1800000);
+  if (reset) gOffset = 0;
+  try {
+    gSched = await api('/api/schedules').catch(() => gSched);
+    const r = await api(`/api/guide?from=${gFrom}&hours=${GUIDE_HOURS}&offset=${gOffset}&limit=40&only=${$('#gOnly').checked ? 1 : 0}&q=${encodeURIComponent($('#gq').value)}&cat=${encodeURIComponent($('#gcat').value)}`);
+    if (r.loading || r.error) {
+      $('#gMsg').textContent = r.error ? '✘ ' + r.error + ' — you can set a guide URL in Settings.' : 'Downloading guide data from your provider… (first time can take a minute)';
+      $('#guide').replaceChildren(); $('#gMore').hidden = true; gLoading = false;
+      if (r.loading) setTimeout(() => tab === 'guide' && loadGuide(true), 4000);
+      return;
+    }
+    $('#gMsg').textContent = `${r.total} channels · guide updated ${new Date(r.updated).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${r.refreshing ? ' (refreshing…)' : ''}`;
+    const width = GUIDE_HOURS * 60 * PPM;
+    if (reset || !gTrack) {
+      const head = el('div', { className: 'grow ghead' }, el('div', { className: 'gch' }),
+        el('div', { className: 'gtrack', style: `width:${width}px` }));
+      for (let m = 0; m < GUIDE_HOURS * 60; m += 30) head.lastChild.append(el('div', { className: 'gtick', style: `left:${m * PPM}px`, textContent: hm(gFrom + m * 60000) }));
+      const nowMs = Date.now();
+      if (nowMs >= gFrom && nowMs < gFrom + GUIDE_HOURS * 3600000) head.lastChild.append(el('div', { className: 'gnow', style: `left:${(nowMs - gFrom) / 60000 * PPM}px` }));
+      gTrack = el('div', { className: 'ginner', style: `width:${width + 170}px` }, head);
+      $('#guide').replaceChildren(el('div', { className: 'gwrap' }, gTrack));
+    }
+    r.rows.forEach((row) => {
+      const track = el('div', { className: 'gtrack', style: `width:${width}px` });
+      row.progs.forEach((p) => {
+        const s = Math.max(p.s, r.from), e = Math.min(p.e, r.to);
+        const sched = gSched.some((x) => x.channelId === row.id && x.start === p.s);
+        const airing = p.s <= Date.now() && p.e > Date.now();
+        track.append(el('div', { className: 'gp' + (airing ? ' now' : '') + (sched ? ' sched' : ''), title: p.t,
+          style: `left:${(s - r.from) / 60000 * PPM}px;width:${Math.max(2, (e - s) / 60000 * PPM - 2)}px`,
+          textContent: (sched ? '● ' : '') + p.t, onclick: () => openProgram(row, p) }));
+      });
+      if (!row.progs.length) track.append(el('div', { className: 'muted', style: 'padding:16px', textContent: 'No guide data' }));
+      gTrack.append(el('div', { className: 'grow' },
+        el('div', { className: 'gch', onclick: () => { setTab('live'); playChannel({ id: row.id, name: row.name }); } },
+          el('img', { src: row.logo || '', loading: 'lazy', onerror() { this.style.visibility = 'hidden'; } }), el('span', { textContent: row.name })), track));
+    });
+    gOffset += r.rows.length;
+    $('#gMore').hidden = gOffset >= r.total;
+  } catch (e) { $('#gMsg').textContent = '✘ ' + e.message; }
+  gLoading = false;
+}
+
+function openProgram(row, p) {
+  const m = $('#progModal'), now = Date.now();
+  const airing = p.s <= now && p.e > now;
+  const existing = gSched.find((x) => x.channelId === row.id && x.start === p.s);
+  $('#mTitle').textContent = p.t;
+  $('#mWhen').textContent = `${row.name} · ${new Date(p.s).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${hm(p.s)}–${hm(p.e)}${airing ? ' · on now' : ''}`;
+  $('#mDesc').textContent = p.d || '';
+  $('#mMsg').textContent = ''; $('#mRepeat').value = 'none'; $('#mRepeat').parentElement.hidden = !!existing;
+  const done = () => { m.hidden = true; loadGuide(true); };
+  const acts = [];
+  if (existing) {
+    acts.push(el('button', { textContent: '✔ Scheduled — cancel', onclick: async () => { await api('/api/schedules/' + existing.id, { method: 'DELETE' }); done(); } }));
+  } else {
+    acts.push(el('button', { className: 'rec', textContent: airing ? '● Record from now' : '● Record', onclick: async () => {
+      try {
+        await api('/api/schedules', { method: 'POST', body: { channelId: row.id, start: new Date(p.s).toISOString(), end: new Date(p.e).toISOString(), title: p.t, repeat: $('#mRepeat').value } });
+        $('#mMsg').textContent = airing ? 'Recording will begin within ~15 seconds.' : 'Scheduled.';
+        setTimeout(done, 900); pollStatus();
+      } catch (e) { $('#mMsg').textContent = e.message; }
+    } }));
+  }
+  if (airing) acts.push(el('button', { textContent: '▶ Watch', onclick: () => { m.hidden = true; setTab('live'); playChannel({ id: row.id, name: row.name }); } }));
+  acts.push(el('button', { textContent: 'Close', onclick: () => { m.hidden = true; } }));
+  $('#mActions').replaceChildren(...acts);
+  m.hidden = false;
+}
+$('#progModal').onclick = (e) => { if (e.target.id === 'progModal') e.target.hidden = true; };
 
 // ---------- recordings ----------
 async function pollStatus() {
@@ -193,7 +328,7 @@ async function loadSettings() {
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved — leave blank to keep)' : 'none (LAN only)';
-  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath;
+  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath; $('#sEpg').value = c.epgUrl || '';
   $('#sEnc').replaceChildren(...(sys.encoders.length ? sys.encoders : ['libx264']).map((e) => el('option', { value: e, textContent: e === 'libx264' ? 'libx264 (CPU, best compression)' : e + ' (GPU)' })));
   $('#sEnc').value = c.encoder;
   $('#sys').textContent = sys.ffmpeg ? `✔ ${sys.ffmpeg}` : '✘ ffmpeg not found — install it or set the path above.';
@@ -208,7 +343,7 @@ $('#refresh').onclick = async () => {
     await saveSettings(true);
     const r = await api('/api/refresh', { method: 'POST' });
     $('#refreshMsg').textContent = `✔ ${r.channels} channels in ${r.categories} categories`;
-    $('#cat').replaceChildren(el('option', { value: '', textContent: 'All categories' })); loadCats(); loadChannels(true);
+    loadCats(); loadChannels(true); dirtyGuide = true; gTrack = null;
   } catch (e) { $('#refreshMsg').textContent = '✘ ' + e.message; }
 };
 async function saveSettings(quiet) {
@@ -216,7 +351,7 @@ async function saveSettings(quiet) {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,
-    port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), encoder: $('#sEnc').value,
+    epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), encoder: $('#sEnc').value,
     webPassword: $('#sWebPw').value, clearWebPassword: $('#sClearPw').checked,
   };
   const r = await api('/api/settings', { method: 'PUT', body });
@@ -228,6 +363,6 @@ $('#setForm').onsubmit = async (e) => { e.preventDefault(); try { await saveSett
 (async () => {
   const a = await fetch('/api/auth').then((r) => r.json());
   if (!a.ok) return showLogin();
-  loadCats(); loadChannels(true); pollStatus();
+  initGuide(); loadCats(); loadChannels(true); pollStatus();
   setInterval(pollStatus, 5000);
 })();

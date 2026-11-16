@@ -11,6 +11,8 @@ function parseM3U(text) {
   const cats = new Map();
   const channels = [];
   let cur = null;
+  const head = text.slice(0, 2000).split(/\r?\n/)[0] || '';
+  const tvgUrl = ((head.match(/(?:url-tvg|x-tvg-url)="([^",]+)/i) || [])[1]) || '';
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith('#EXTINF')) {
@@ -29,7 +31,7 @@ function parseM3U(text) {
       cur = null;
     }
   }
-  return { categories: [...cats.values()], channels };
+  return { categories: [...cats.values()], channels, tvgUrl };
 }
 
 class Sources {
@@ -100,11 +102,12 @@ class Sources {
   async query({ cat, q, offset = 0, limit = 200 }) {
     const d = await this.ensure();
     const needle = (q || '').toLowerCase().trim();
+    const hidden = new Set(this.cfg.get().hiddenCategories || []);
     const out = [];
     let total = 0;
     for (let i = 0; i < d.channels.length; i++) {
       const ch = d.channels[i];
-      if (cat && ch.cat !== cat) continue;
+      if (cat ? ch.cat !== cat : hidden.has(ch.cat)) continue;
       if (needle && !d.lower[i].includes(needle)) continue;
       if (total >= offset && out.length < limit) out.push({ id: ch.id, name: ch.name, cat: ch.cat, logo: ch.logo });
       total++;

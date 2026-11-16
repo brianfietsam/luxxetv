@@ -11,6 +11,7 @@
   <h1>Luxxe<span>TV</span></h1>
   <nav id="tabs">
     <button data-tab="live" class="on">Live</button>
+    <button data-tab="guide">Guide</button>
     <button data-tab="recordings">Recordings</button>
     <button data-tab="schedule">Schedule</button>
     <button data-tab="settings">Settings</button>
@@ -25,6 +26,19 @@
     <button class="primary">Enter</button>
     <p id="loginErr" class="err"></p>
   </form>
+</div>
+
+<div id="progModal" hidden>
+  <div class="card" id="progCard">
+    <b id="mTitle"></b>
+    <div id="mWhen" class="muted"></div>
+    <div id="mDesc"></div>
+    <label>Repeat
+      <select id="mRepeat"><option value="none">Just this showing</option><option value="daily">Every day at this time</option><option value="weekly">Every week at this time</option></select>
+    </label>
+    <div class="row" id="mActions"></div>
+    <p id="mMsg" class="muted"></p>
+  </div>
 </div>
 
 <main>
@@ -46,6 +60,23 @@
     <button id="more" class="wide" hidden>Show more</button>
   </section>
 
+  <section id="tab-guide" class="tab" hidden>
+    <div class="filters">
+      <input id="gq" type="search" placeholder="Search channels…">
+      <select id="gcat"><option value="">All categories</option></select>
+    </div>
+    <div class="filters">
+      <button type="button" id="gPrev">◀ Earlier</button>
+      <button type="button" id="gNow">Now</button>
+      <button type="button" id="gNext">Later ▶</button>
+      <select id="gDay"></select>
+      <label class="chk"><input type="checkbox" id="gOnly" checked> Only channels with guide data</label>
+    </div>
+    <div id="gMsg" class="muted"></div>
+    <div id="guide"></div>
+    <button id="gMore" class="wide" hidden>Load more channels</button>
+  </section>
+
   <section id="tab-recordings" class="tab" hidden>
     <div id="active"></div>
     <div id="recList"></div>
@@ -54,6 +85,7 @@
   <section id="tab-schedule" class="tab" hidden>
     <form id="schedForm" class="card">
       <h3>Schedule a recording</h3>
+      <p class="muted">Tip: use the Guide tab to pick a program and schedule it in one tap.</p>
       <input id="sq" type="search" placeholder="Find channel…">
       <select id="sch" size="4"></select>
       <label>Start <input id="sStart" type="datetime-local" required></label>
@@ -78,8 +110,22 @@
         <label>Password <input id="sPass" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
       </div>
       <div id="m3uF" hidden><label>M3U URL <input id="sM3u"></label></div>
+      <label>TV guide URL (XMLTV) – optional, blank = automatic <input id="sEpg" placeholder="http://…/xmltv.php?…"></label>
       <button type="button" id="refresh">Test &amp; reload channel list</button>
       <p id="refreshMsg" class="muted"></p>
+
+      <div id="catBox">
+        <button type="button" id="manageCats">Show / hide categories…</button>
+        <p id="catSummary" class="muted"></p>
+        <div id="catPanel" hidden>
+          <input id="catFilter" type="search" placeholder="Filter categories…">
+          <div class="row">
+            <button type="button" id="catShowAll">Show all</button>
+            <button type="button" id="catHideAll">Hide all</button>
+          </div>
+          <div id="catList"></div>
+        </div>
+      </div>
 
       <h3>Recording</h3>
       <label>Save folder

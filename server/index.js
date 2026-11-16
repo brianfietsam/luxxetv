@@ -8,6 +8,7 @@ const { Sources } = require('./sources');
 const { Recorder } = require('./recorder');
 const { Live } = require('./live');
 const { Scheduler } = require('./scheduler');
+const { Epg } = require('./epg');
 const { findFfmpeg, listEncoders } = require('./ffmpeg');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -25,6 +26,7 @@ async function start({ dataDir, port }) {
   const sources = new Sources(cfg, dataDir);
   let ffmpeg = findFfmpeg(cfg.get().ffmpegPath);
   const getFfmpeg = () => ffmpeg;
+  const epg = new Epg({ cfg, sources, dataDir });
   const recorder = new Recorder({ cfg, sources, getFfmpeg });
   const live = new Live({ cfg, sources, getFfmpeg });
   const scheduler = new Scheduler({ cfg, dataDir, recorder, sources });
@@ -81,16 +83,50 @@ async function start({ dataDir, port }) {
   app.use(['/api', '/live', '/rec'], guard);
 
   // ---- channels ----
-  app.get('/api/categories', wrap(async (req, res) => { res.json((await sources.ensure()).categories); }));
+  app.get('/api/categories', wrap(async (req, res) => {
+    const d = await sources.ensure();
+    const hidden = new Set(cfg.get().hiddenCategories || []);
+    const counts = new Map();
+    d.channels.forEach((c) => counts.set(c.cat, (counts.get(c.cat) || 0) + 1));
+    const all = d.categories.map((c) => ({ ...c, count: counts.get(c.name) || 0, hidden: hidden.has(c.name) }));
+    res.json(req.query.all ? all : all.filter((c) => !c.hidden));
+  }));
+  app.put('/api/categories/hidden', wrap(async (req, res) => {
+    const list = Array.isArray(req.body.hidden) ? req.body.hidden.map(String) : [];
+    cfg.update({ hiddenCategories: list });
+    res.json({ ok: true });
+  }));
   app.get('/api/channels', wrap(async (req, res) => {
     res.json(await sources.query({ cat: req.query.cat, q: req.query.q, offset: +req.query.offset || 0, limit: Math.min(+req.query.limit || 200, 500) }));
   }));
   app.get('/api/epg/:id', wrap(async (req, res) => res.json(await sources.epg(req.params.id))));
   app.post('/api/refresh', wrap(async (req, res) => {
-    sources.invalidate();
+    sources.invalidate(); epg.invalidate();
     const d = await sources.ensure(true);
+    epg.ensureStarted(true);
     res.json({ channels: d.channels.length, categories: d.categories.length });
   }));
+
+  // ---- TV guide ----
+  app.get('/api/guide', wrap(async (req, res) => {
+    const st = epg.ensureStarted();
+    if (!st.ready) return res.json({ loading: !!st.loading, error: st.error });
+    const d = await sources.ensure();
+    const from = +req.query.from || Date.now();
+    const to = from + (Math.min(+req.query.hours || 6, 24)) * 3600000;
+    const only = req.query.only !== '0';
+    const items = (await sources.query({ cat: req.query.cat, q: req.query.q, offset: 0, limit: 1e9 })).items;
+    const rows = [];
+    for (const it of items) {
+      const progs = epg.get(d.byId.get(it.id).epgId, from, to);
+      if (only && !progs.length) continue;
+      rows.push({ id: it.id, name: it.name, logo: it.logo, progs });
+    }
+    const offset = +req.query.offset || 0, limit = Math.min(+req.query.limit || 40, 100);
+    res.json({ from, to, total: rows.length, rows: rows.slice(offset, offset + limit), updated: st.updated, refreshing: st.loading });
+  }));
+  app.get('/api/guide/status', (req, res) => res.json(epg.status()));
+  app.post('/api/guide/refresh', (req, res) => { epg.invalidate(); res.json(epg.ensureStarted(true)); });
 
   // ---- recording ----
   app.post('/api/record', wrap(async (req, res) => {
@@ -152,7 +188,7 @@ async function start({ dataDir, port }) {
     delete p.webPasswordSet;
     if (p.source) delete p.source.passwordSet;
     cfg.update(p);
-    sources.invalidate();
+    sources.invalidate(); epg.invalidate();
     ffmpeg = findFfmpeg(cfg.get().ffmpegPath);
     if (p.webPassword) setAuthCookie(res);   // keep the current browser logged in
     res.json({ ok: true, restartNeeded: p.port !== undefined || p.listenAll !== undefined });

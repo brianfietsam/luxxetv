@@ -10,12 +10,26 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg') {
       if (u.searchParams.get('username') !== 'u' || u.searchParams.get('password') !== 'p') return res.end('{"user_info":{"auth":0}}');
       const a = u.searchParams.get('action');
       res.setHeader('Content-Type', 'application/json');
-      if (a === 'get_live_categories') return res.end(JSON.stringify([{ category_id: '1', category_name: 'Test' }]));
+      if (a === 'get_live_categories') return res.end(JSON.stringify([{ category_id: '1', category_name: 'Test' }, { category_id: '2', category_name: 'Other' }]));
       if (a === 'get_live_streams') return res.end(JSON.stringify([
-        { stream_id: 1, name: 'Test Pattern HD', category_id: '1', stream_icon: '', epg_channel_id: '' },
-        { stream_id: 2, name: 'Second Channel', category_id: '1', stream_icon: '', epg_channel_id: '' }]));
+        { stream_id: 1, name: 'Test Pattern HD', category_id: '1', stream_icon: '', epg_channel_id: 'Test.One' },
+        { stream_id: 2, name: 'Second Channel', category_id: '2', stream_icon: '', epg_channel_id: '' }]));
       if (a === 'get_short_epg') return res.end(JSON.stringify({ epg_listings: [{ title: Buffer.from('Test Show').toString('base64'), description: Buffer.from('Fake EPG').toString('base64'), start_timestamp: String(Date.now() / 1000 - 600 | 0), stop_timestamp: String(Date.now() / 1000 + 1200 | 0) }] }));
       return res.end('{}');
+    }
+    if (u.pathname === '/xmltv.php') {
+      // 30-minute programmes, from 2h ago to 48h ahead, timestamps written with a +0100 offset
+      const pad = (n) => String(n).padStart(2, '0');
+      const fmt = (ms) => { const d = new Date(ms + 3600000); return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())} +0100`; };
+      const base = Math.floor(Date.now() / 1800000) * 1800000 - 4 * 1800000;
+      let x = '<?xml version="1.0"?>\n<tv><channel id="test.one"><display-name>One</display-name></channel>\n';
+      for (let i = 0; i < 100; i++) {
+        const s = base + i * 1800000;
+        x += `<programme start="${fmt(s)}" stop="${fmt(s + 1800000)}" channel="test.one"><title lang="en">Show ${i} &amp; Friends</title><desc>Episode &#35;${i}</desc></programme>\n`;
+        x += `<programme start="${fmt(s)}" stop="${fmt(s + 1800000)}" channel="not.ours"><title>Ignored</title></programme>\n`;
+      }
+      res.setHeader('Content-Type', 'application/xml');
+      return res.end(x + '</tv>');
     }
     if (u.pathname.startsWith('/live/u/p/')) {
       res.writeHead(200, { 'Content-Type': 'video/mp2t' });

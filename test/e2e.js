@@ -50,6 +50,32 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   const rng = await fetch(`${base}/rec/${encodeURIComponent(list[0].name)}`, { headers: { Range: 'bytes=0-99' } });
   ok(rng.status === 206, 'HTTP range playback (seeking)');
 
+  // TV guide (XMLTV) + category hiding + scheduling from a guide entry
+  let g;
+  for (let i = 0; i < 30; i++) { g = await j('/api/guide?hours=6'); if (!g.loading) break; await sleep(500); }
+  ok(g.rows && g.rows.length === 1 && g.rows[0].name === 'Test Pattern HD', 'guide lists only channels that have data');
+  const p0 = g.rows[0].progs[0];
+  ok(p0.t.includes('& Friends') && p0.d.startsWith('Episode #'), 'XMLTV entities decoded');
+  const nowMs = Date.now();
+  const cur = g.rows[0].progs.find((p) => p.s <= nowMs && p.e > nowMs);
+  ok(cur && cur.e - cur.s === 1800000, 'timezone offset parsed (a programme is airing now)');
+  ok((await j('/api/guide?only=0')).rows.length === 2, 'channels without guide data shown when requested');
+  await post('/api/categories/hidden', { hidden: ['Other'] }, 'PUT');
+  ok((await j('/api/guide?only=0')).rows.length === 1, 'hidden categories excluded from guide');
+  await post('/api/categories/hidden', { hidden: [] }, 'PUT');
+
+  await post('/api/settings', { padBeforeMin: 0, padAfterMin: 0 }, 'PUT');
+  const sch = await post('/api/schedules', { channelId: '1', start: new Date(Date.now() + 2000).toISOString(), end: new Date(Date.now() + 60000).toISOString(), title: 'Scheduled Test' });
+  ok(sch.id, 'programme scheduled');
+  let started = null;
+  for (let i = 0; i < 40 && !started; i++) { await sleep(1000); started = (await j('/api/record/status')).active[0]; }
+  ok(started && started.title === 'Scheduled Test', 'scheduler started the recording on time');
+  await sleep(4000);
+  if (started) await post(`/api/record/${started.id}/stop`, {});
+  for (let i = 0; i < 20; i++) { if (!(await j('/api/record/status')).active.length) break; await sleep(500); }
+  const list2 = await j('/api/recordings');
+  ok(list2.some((r) => r.name.includes('Scheduled Test') && r.size > 20000), 'scheduled recording file saved with program title');
+
   // auth + LAN guard
   await post('/api/settings', { webPassword: 'secret' }, 'PUT');
   ok((await fetch(`${base}/api/channels`)).status === 401, 'API locked once password set');

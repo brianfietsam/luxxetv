@@ -6,6 +6,8 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
 
 ## Features
 - Xtream Codes (server/user/pass) or M3U URL; category filter, search, EPG now/next
+- **TV guide** (XMLTV from your provider, ~3 days ahead): scrolling time grid; tap a program to record it once, daily or weekly, or to watch it if it is on now. Scheduled programs are highlighted. Set a custom guide URL in Settings if your provider has none.
+- **Show/hide categories** in Settings, under the playlist; applies to Live, Guide and every device
 - **Record now** (until stopped / 30m–3h) or **schedule** (once, daily, weekly, with start/stop padding)
 - Recordings go to a folder **you choose**, transcoded with ffmpeg to H.264/AAC MP4:
   | Preset | Resolution | Approx. size |
