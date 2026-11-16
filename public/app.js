@@ -79,16 +79,18 @@ async function playChannel(ch) {
   const recSel = el('select', { style: 'width:auto' },
     ...[['Until I stop', 0], ['30 min', 30], ['1 hour', 60], ['2 hours', 120], ['3 hours', 180]].map(([l, v]) => el('option', { value: v, textContent: l })));
   const recBtn = el('button', { className: 'rec', textContent: '● Record', onclick: async () => {
-    try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +recSel.value } }); pollStatus(); recBtn.textContent = '✔ Recording'; }
+    try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +recSel.value, title: nowTitle } }); pollStatus(); recBtn.textContent = '✔ Recording'; }
     catch (e) { alert(e.message); }
   } });
   const schedBtn = el('button', { textContent: 'Schedule…', onclick: () => { setTab('schedule'); pickChannel(ch); } });
+  let nowTitle = '';
   const closeBtn = el('button', { textContent: '✕', onclick: () => { stopPlayer(); $('#player').hidden = true; } });
   openPlayer(ch.name, '', [recSel, recBtn, schedBtn, closeBtn]);
   attach(`/live/${encodeURIComponent(ch.id)}/index.m3u8`, $('#pStatus'));
   api('/api/epg/' + encodeURIComponent(ch.id)).then((e) => {
     const now = Date.now();
     const n = e.find((x) => x.start <= now && x.end > now) || e[0];
+    if (n) nowTitle = n.title || '';
     if (n && current === ch) $('#pSub').textContent = `${n.title}${n.end ? ' · until ' + new Date(n.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}`;
   }).catch(() => {});
 }
@@ -171,10 +173,10 @@ function initGuide() {
   }
 }
 function guideStart(ms) { gFrom = Math.max(snap30(Date.now() - 3600000), ms); loadGuide(true); }
-$('#gNow').onclick = () => { $('#gDay').value = 'now'; guideStart(snap30(Date.now() - 1800000)); };
+$('#gNow').onclick = () => { $('#gDay').value = 'now'; guideStart(snap30(Date.now())); };
 $('#gPrev').onclick = () => guideStart(gFrom - 3 * 3600000);
 $('#gNext').onclick = () => guideStart(gFrom + 3 * 3600000);
-$('#gDay').onchange = () => guideStart($('#gDay').value === 'now' ? snap30(Date.now() - 1800000) : +$('#gDay').value);
+$('#gDay').onchange = () => guideStart($('#gDay').value === 'now' ? snap30(Date.now()) : +$('#gDay').value);
 let gqt; $('#gq').oninput = () => { clearTimeout(gqt); gqt = setTimeout(() => loadGuide(true), 300); };
 $('#gcat').onchange = () => loadGuide(true);
 $('#gOnly').onchange = () => loadGuide(true);
@@ -182,7 +184,7 @@ $('#gMore').onclick = () => loadGuide(false);
 
 async function loadGuide(reset) {
   if (gLoading) return; gLoading = true;
-  if (!gFrom) gFrom = snap30(Date.now() - 1800000);
+  if (!gFrom) gFrom = snap30(Date.now());
   if (reset) gOffset = 0;
   try {
     gSched = await api('/api/schedules').catch(() => gSched);
@@ -230,7 +232,7 @@ function openProgram(row, p) {
   const airing = p.s <= now && p.e > now;
   const existing = gSched.find((x) => x.channelId === row.id && x.start === p.s);
   $('#mTitle').textContent = p.t;
-  $('#mWhen').textContent = `${row.name} · ${new Date(p.s).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${hm(p.s)}–${hm(p.e)}${airing ? ' · on now' : ''}`;
+  $('#mWhen').textContent = `${new Date(p.s).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} ${hm(p.s)}–${hm(p.e)}${airing ? ' · on now' : ''} · ${row.name}`;
   $('#mDesc').textContent = p.d || '';
   $('#mMsg').textContent = ''; $('#mRepeat').value = 'none'; $('#mRepeat').parentElement.hidden = !!existing;
   const done = () => { m.hidden = true; loadGuide(true); };
@@ -258,17 +260,30 @@ async function pollStatus() {
   try {
     const s = await api('/api/record/status');
     const b = $('#recbadge');
-    b.hidden = !s.active.length;
-    b.textContent = `● REC ${s.active.length}`;
+    const bt = `● REC ${s.active.length}`;
+    if (b.hidden !== !s.active.length) b.hidden = !s.active.length;
+    if (b.textContent !== bt) b.textContent = bt;
     if (tab === 'recordings') renderActive(s);
   } catch { /* ignore */ }
 }
+let activeSig = '';
+function activeInfo(r) {
+  return `${fmtSize(r.bytes)} · started ${fmtTime(r.startedAt)}${r.endAt ? ' · ends ' + new Date(r.endAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}${r.status === 'processing' ? ' · removing commercials…' : ''}`;
+}
 function renderActive(s) {
+  // Rebuild only when the set of recordings changes; otherwise patch text in place so buttons don't flicker.
+  const sig = s.active.map((r) => r.id + r.status).join() + '|' + s.recent.filter((r) => r.error).slice(0, 3).map((r) => r.id).join();
+  if (sig === activeSig) {
+    s.active.forEach((r) => { const n = document.querySelector('.rec-' + r.id); if (n && n.textContent !== activeInfo(r)) n.textContent = activeInfo(r); });
+    return;
+  }
+  activeSig = sig;
   $('#active').replaceChildren(...s.active.map((r) => el('div', { className: 'item live' },
-    el('div', { className: 't' }, el('b', { textContent: '● ' + r.name }),
-      el('div', { className: 'muted', textContent: `${fmtSize(r.bytes)} · started ${fmtTime(r.startedAt)}${r.endAt ? ' · ends ' + new Date(r.endAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}` })),
+    el('div', { className: 't' }, el('b', { textContent: '● ' + (r.title || r.name) }),
+      el('div', { className: 'muted', textContent: r.title ? r.name : '' }),
+      el('div', { className: 'muted rec-' + r.id, textContent: activeInfo(r) })),
     el('button', { textContent: 'Stop', onclick: async () => { await api(`/api/record/${r.id}/stop`, { method: 'POST' }); setTimeout(() => { pollStatus(); loadRecordings(); }, 1500); } })),
-  ), ...s.recent.filter((r) => r.error).slice(0, 3).map((r) => el('div', { className: 'item' }, el('span', { className: 'err', textContent: `${r.name}: ${r.error}` }))));
+  ), ...s.recent.filter((r) => r.error).slice(0, 3).map((r) => el('div', { className: 'item' }, el('span', { className: 'err', textContent: `${r.title || r.name}: ${r.error}` }))));
 }
 async function loadRecordings() {
   const list = await api('/api/recordings').catch(() => []);
@@ -311,8 +326,8 @@ $('#schedForm').onsubmit = async (e) => {
 async function loadSchedules() {
   const l = await api('/api/schedules').catch(() => []);
   $('#schedList').replaceChildren(...(l.length ? l.map((s) => el('div', { className: 'item' },
-    el('div', { className: 't' }, el('b', { textContent: s.channelName + (s.title ? ' — ' + s.title : '') }),
-      el('div', { className: 'muted', textContent: `${fmtTime(s.start)} → ${new Date(s.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${s.repeat === 'none' ? 'once' : s.repeat}${s.lastError ? ' · ' + s.lastError : ''}` })),
+    el('div', { className: 't' }, el('b', { textContent: s.title || s.channelName }),
+      el('div', { className: 'muted', textContent: `${fmtTime(s.start)} → ${new Date(s.end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${s.repeat === 'none' ? 'once' : s.repeat} · ${s.channelName}${s.lastError ? ' · ' + s.lastError : ''}` })),
     el('button', { textContent: 'Remove', onclick: async () => { await api('/api/schedules/' + s.id, { method: 'DELETE' }); loadSchedules(); } }))) : [el('p', { className: 'muted', textContent: 'Nothing scheduled.' })]));
 }
 
@@ -328,7 +343,7 @@ async function loadSettings() {
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved — leave blank to keep)' : 'none (LAN only)';
-  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath; $('#sEpg').value = c.epgUrl || '';
+  $('#sPort').value = c.port; $('#sListen').checked = c.listenAll; $('#sFf').value = c.ffmpegPath; $('#sComm').value = c.commSkip || 'off'; $('#sCs').value = c.comskipPath || ''; $('#sEpg').value = c.epgUrl || '';
   $('#sEnc').replaceChildren(...(sys.encoders.length ? sys.encoders : ['libx264']).map((e) => el('option', { value: e, textContent: e === 'libx264' ? 'libx264 (CPU, best compression)' : e + ' (GPU)' })));
   $('#sEnc').value = c.encoder;
   $('#sys').textContent = sys.ffmpeg ? `✔ ${sys.ffmpeg}` : '✘ ffmpeg not found — install it or set the path above.';
@@ -351,7 +366,7 @@ async function saveSettings(quiet) {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,
-    epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), encoder: $('#sEnc').value,
+    epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), commSkip: $('#sComm').value, comskipPath: $('#sCs').value.trim(), encoder: $('#sEnc').value,
     webPassword: $('#sWebPw').value, clearWebPassword: $('#sClearPw').checked,
   };
   const r = await api('/api/settings', { method: 'PUT', body });

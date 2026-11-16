@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { videoArgs, inputArgs } = require('./ffmpeg');
+const { findComskip, stripCommercials } = require('./comskip');
 
 const PRESETS = {
   small:    { crf: 28, maxHeight: 480,  maxrateK: 1000, audio: '96k'  },
@@ -58,38 +59,93 @@ class Recorder {
     return this.pub(rec);
   }
 
+  _ext() { return this.cfg.get().recordQuality === 'copy' ? 'mkv' : 'mp4'; }
+
+  // Show title (and episode) leads the filename; the channel is only a fallback / suffix.
   _uniqueFile(rec) {
     const c = this.cfg.get();
-    const ext = c.recordQuality === 'copy' ? 'mkv' : 'mp4';
-    const base = `${safe(rec.name)} - ${stamp(new Date(rec.startedAt))}${rec.title ? ' - ' + safe(rec.title) : ''}${rec.part > 1 ? ` (part ${rec.part})` : ''}`;
-    let f = path.join(c.recordDir, `${base}.${ext}`);
-    for (let i = 2; fs.existsSync(f); i++) f = path.join(c.recordDir, `${base} (${i}).${ext}`);
+    const label = rec.title ? safe(rec.title) : safe(rec.name);
+    const base = `${label} - ${stamp(new Date(rec.startedAt))}`;
+    let f = path.join(c.recordDir, `${base}.${this._ext()}`);
+    for (let i = 2; fs.existsSync(f); i++) f = path.join(c.recordDir, `${base} (${i}).${this._ext()}`);
     return f;
   }
 
   async _run(rec, ffmpegPath) {
     let fails = 0;
+    const dir = this.cfg.get().recordDir;
+    const partsDir = path.join(dir, '.parts');
+    const extras = [];
     while (!rec.stopping && (!rec.endAt || Date.now() < rec.endAt - 3000)) {
       rec.part++;
       let url;
       try { url = await this.sources.streamUrl(rec.channelId); } catch (e) { rec.error = e.message; break; }
-      const file = this._uniqueFile(rec);
+      // first good part is the visible recording; reconnect parts go to a hidden folder and are merged in at the end
+      let file;
+      if (!rec.mainFile) file = this._uniqueFile(rec);
+      else { fs.mkdirSync(partsDir, { recursive: true }); file = path.join(partsDir, `${rec.id}-${rec.part}.${this._ext()}`); }
       rec.currentFile = file;
       const remaining = rec.endAt ? Math.max(1, Math.ceil((rec.endAt - Date.now()) / 1000)) : 0;
       const t0 = Date.now();
       await this._spawn(rec, ffmpegPath, this._args(url, file, remaining));
       let size = 0; try { size = fs.statSync(file).size; } catch { /* missing */ }
-      if (size < 20000) { try { fs.unlinkSync(file); } catch { /* ignore */ } } else rec.files.push(path.basename(file));
+      if (size < 20000) { try { fs.unlinkSync(file); } catch { /* ignore */ } }
+      else if (!rec.mainFile) { rec.mainFile = file; rec.files.push(path.basename(file)); }
+      else extras.push(file);
       if (rec.stopping) break;
       fails = Date.now() - t0 < 10000 ? fails + 1 : 0;
       if (fails >= 5) { rec.error = 'Stream kept failing - gave up'; break; }
       await sleep(3000);
     }
+    rec.currentFile = null;
+    if (rec.mainFile && extras.length) await this._merge(rec, ffmpegPath, extras, partsDir);
+    const c = this.cfg.get();
+    if (rec.mainFile && c.commSkip === 'cut') {
+      const cs = findComskip(c.comskipPath);
+      if (!cs) rec.lastError = 'Commercial skip is on but comskip was not found - set its path in Settings';
+      else {
+        rec.status = 'processing';
+        try {
+          const r = await stripCommercials({ file: rec.mainFile, comskipPath: cs.path, ffmpegPath });
+          rec.lastError = r.removed ? `Removed ${Math.round(r.removed / 60)} min of commercials` : r.skipped;
+        } catch (e) { rec.lastError = 'comskip failed: ' + e.message; }
+      }
+    }
     rec.status = rec.error ? 'failed' : 'done';
-    rec.proc = null; rec.currentFile = null;
+    rec.proc = null;
     this.active.delete(rec.id);
     this.recent.unshift(this.pub(rec));
     this.recent.length = Math.min(this.recent.length, 20);
+  }
+
+  // Join reconnect fragments into the main file so one recording = one file.
+  async _merge(rec, ffmpegPath, extras, partsDir) {
+    const all = [rec.mainFile, ...extras];
+    const listFile = path.join(partsDir, `${rec.id}-list.txt`);
+    const merged = path.join(partsDir, `${rec.id}-merged${path.extname(rec.mainFile)}`);
+    try {
+      fs.mkdirSync(partsDir, { recursive: true });
+      const q = (f) => `file '${f.split('\\').join('/').split("'").join("'\\''")}'`;
+      fs.writeFileSync(listFile, all.map(q).join('\n'));
+      const mv = rec.mainFile.endsWith('.mp4') ? ['-movflags', '+faststart'] : [];
+      const ok = await new Promise((resolve) => {
+        const p = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile,
+          '-c', 'copy', ...mv, '-y', merged], { stdio: 'ignore', windowsHide: true });
+        p.on('error', () => resolve(false));
+        p.on('close', (code) => resolve(code === 0));
+      });
+      if (ok && fs.existsSync(merged) && fs.statSync(merged).size > 20000) {
+        fs.renameSync(merged, rec.mainFile);
+        extras.forEach((f) => { try { fs.unlinkSync(f); } catch { /* ignore */ } });
+      } else {
+        // merge failed: keep the pieces visible rather than losing them
+        for (const f of extras) {
+          const dest = this._uniqueFile({ ...rec, title: (rec.title || rec.name) + ' (part ' + (rec.files.length + 1) + ')' });
+          try { fs.renameSync(f, dest); rec.files.push(path.basename(dest)); } catch { /* ignore */ }
+        }
+      }
+    } catch (e) { rec.lastError = 'merge failed: ' + e.message; }
+    for (const f of [listFile, merged]) { try { fs.unlinkSync(f); } catch { /* ignore */ } }
   }
 
   _spawn(rec, ffmpegPath, args) {
