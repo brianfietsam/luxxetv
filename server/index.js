@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const { Config } = require('./config');
 const { Sources } = require('./sources');
 const { Recorder } = require('./recorder');
@@ -84,7 +85,7 @@ async function start({ dataDir, port }) {
   app.get('/vendor/hls.min.js', (req, res) => res.sendFile(HLS_JS));
 
   const guard = (req, res, next) => (authed(req) ? next() : res.status(401).json({ error: 'auth' }));
-  app.use(['/api', '/live', '/rec', '/dl'], guard);
+  app.use(['/api', '/live', '/rec', '/dl', '/vodplay'], guard);
 
   // ---- channels ----
   app.get('/api/categories', wrap(async (req, res) => {
@@ -221,6 +222,46 @@ async function start({ dataDir, port }) {
     live.touch(req.params.id);
     res.set('Cache-Control', 'no-store');
     res.sendFile(path.join(live.dirFor(req.params.id), req.params.file), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+  });
+
+  // ---- watch movies / episodes in the browser ----
+  // key = "m-<movieId>" or "e-<episodeId>"; direct = provider file passed through (seekable), hls = ffmpeg-converted fallback
+  const vodSource = async (req) => {
+    const m = /^([me])-(\d+)$/.exec(req.params.key);
+    if (!m) throw new Error('Bad id');
+    if (m[1] === 'm') { const mv = await vod.movie(m[2]); return { url: vod.movieUrl(mv), ext: mv.ext }; }
+    const ext = /^[a-z0-9]{2,5}$/i.test(req.query.ext || '') ? req.query.ext : 'mp4';
+    return { url: vod.episodeUrl({ id: m[2], ext }), ext };
+  };
+  const MIME = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska' };
+  app.get('/vodplay/:key/direct', wrap(async (req, res) => {
+    const src = await vodSource(req);
+    const ac = new AbortController();
+    res.on('close', () => ac.abort());
+    const headers = { 'User-Agent': cfg.get().userAgent };
+    if (req.headers.range) headers.Range = req.headers.range;
+    const up = await fetch(src.url, { headers, signal: ac.signal });
+    if (!up.ok && up.status !== 206) return res.status(502).json({ error: `Provider replied HTTP ${up.status}` });
+    res.status(up.status);
+    res.set('Content-Type', MIME[src.ext.toLowerCase()] || up.headers.get('content-type') || 'application/octet-stream');
+    for (const h of ['content-length', 'content-range', 'accept-ranges']) if (up.headers.get(h)) res.set(h, up.headers.get(h));
+    Readable.fromWeb(up.body).on('error', () => res.destroy()).pipe(res);
+  }));
+  app.get('/vodplay/:key/index.m3u8', wrap(async (req, res) => {
+    const src = await vodSource(req);
+    const s = await live.ensureVod(req.params.key, src.url);
+    s.last = Date.now();
+    const f = await live.waitPlaylist(s, 45000);
+    if (!f) return res.status(502).json({ error: 'Could not convert this video', detail: s.err.split('\n').pop() });
+    res.set({ 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'no-store' });
+    res.send(fs.readFileSync(f));
+  }));
+  app.get('/vodplay/:key/:file', (req, res) => {
+    if (!/^seg_\d+\.ts$/.test(req.params.file)) return res.status(404).end();
+    const s = live.vod.get(req.params.key);
+    if (!s) return res.status(404).end();
+    s.last = Date.now();
+    res.sendFile(path.join(s.dir, req.params.file), (err) => { if (err && !res.headersSent) res.status(404).end(); });
   });
 
   // ---- settings / system ----

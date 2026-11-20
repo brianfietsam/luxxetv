@@ -339,6 +339,7 @@ async function unschedule(s, tile) {
 let hls = null, stageChan = null;
 const video = $('#video');
 function stopVideo() {
+  video.onerror = null;
   if (hls) { hls.destroy(); hls = null; }
   video.removeAttribute('src'); video.load();
 }

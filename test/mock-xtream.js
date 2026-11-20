@@ -31,7 +31,7 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
         { stream_id: 2, name: 'Second Channel', category_id: '2', stream_icon: '', epg_channel_id: '' }]));
       if (a === 'get_short_epg') return res.end(JSON.stringify({ epg_listings: [{ title: Buffer.from('Test Show').toString('base64'), description: Buffer.from('Fake EPG').toString('base64'), start_timestamp: String(Date.now() / 1000 - 600 | 0), stop_timestamp: String(Date.now() / 1000 + 1200 | 0) }] }));
       if (a === 'get_vod_categories') return res.end(JSON.stringify([{ category_id: '10', category_name: 'Action' }, { category_id: '11', category_name: 'Drama' }]));
-      if (a === 'get_vod_streams') return res.end(JSON.stringify(MOVIES.map((m, i) => ({ stream_id: 100 + i, name: m[0], category_id: m[1], stream_icon: '', rating_5based: m[2], added: String(1700000000 + i), container_extension: 'mp4', tmdb: m[3] }))));
+      if (a === 'get_vod_streams') return res.end(JSON.stringify(MOVIES.map((m, i) => ({ stream_id: 100 + i, name: m[0], category_id: m[1], stream_icon: 'http://127.0.0.1:9098/p.svg', rating_5based: m[2], added: String(1700000000 + i), container_extension: 'mp4', tmdb: m[3] }))));
       if (a === 'get_series_categories') return res.end(JSON.stringify([{ category_id: '20', category_name: 'Sci-Fi' }]));
       if (a === 'get_series') return res.end(JSON.stringify([{ series_id: 7, name: 'Space Show (2021)', category_id: '20', cover: '', rating_5based: 4, last_modified: '1700000000' }]));
       if (a === 'get_series_info') return res.end(JSON.stringify({ info: { name: 'Space Show', plot: 'Space.' }, episodes: {
@@ -40,6 +40,12 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
       return res.end('{}');
     }
     if (u.pathname.startsWith('/movie/u/p/') || u.pathname.startsWith('/series/u/p/')) {
+      if (u.pathname.endsWith('.mkv')) {            // a real (short) Matroska file so the HLS conversion path can be tested
+        res.writeHead(200, { 'Content-Type': 'video/x-matroska' });
+        const p = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=25:duration=3', '-f', 'lavfi', '-i', 'sine=duration=3', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'ac3', '-f', 'matroska', 'pipe:1'], { windowsHide: true });
+        p.stdout.pipe(res); res.on('close', () => p.kill());
+        return;
+      }
       const body = Buffer.alloc(300000, 7);            // 300 KB fake video; honours Range so resume works
       const m = /bytes=(\d+)-/.exec(req.headers.range || '');
       if (m) { res.writeHead(206, { 'Content-Length': body.length - +m[1], 'Content-Range': `bytes ${m[1]}-${body.length - 1}/${body.length}` }); return res.end(body.subarray(+m[1])); }

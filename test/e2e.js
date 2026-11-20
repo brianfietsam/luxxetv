@@ -124,6 +124,18 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   await j('/api/downloads/file?f=' + encodeURIComponent('Movies/Big Blockbuster (2003).mp4'), { method: 'DELETE' });
   ok((await j('/api/downloads')).files.length === 3, 'downloaded file deleted');
 
+  // watch in the browser: direct passthrough with Range, bad ids rejected
+  const dr = await fetch(`${base}/vodplay/m-${mv.items[0].id}/direct`);
+  ok(dr.status === 200 && dr.headers.get('content-type') === 'video/mp4' && (await dr.arrayBuffer()).byteLength === 300000, 'movie streams directly from provider');
+  const dr2 = await fetch(`${base}/vodplay/e-501/direct?ext=mp4`, { headers: { Range: 'bytes=100-199' } });
+  ok(dr2.status === 206 && dr2.headers.get('content-range') === 'bytes 100-299999/300000', 'episode direct stream honours Range (seeking)');
+  ok((await fetch(`${base}/vodplay/x-1/direct`)).status === 500, 'bad vod key rejected');
+  const hl = await fetch(`${base}/vodplay/e-601/index.m3u8?ext=mkv`);
+  const hlText = await hl.text();
+  ok(hl.status === 200 && hlText.includes('#EXTM3U') && hlText.includes('seg_'), 'mkv with AC3 converted to HLS for the browser');
+  const hseg = hlText.split('\n').find((l) => l.endsWith('.ts'));
+  const hs = await fetch(`${base}/vodplay/e-601/${hseg}`);
+  ok(hs.status === 200 && (await hs.arrayBuffer()).byteLength > 1000, 'converted VOD segment served');
   // auth + LAN guard
   await post('/api/settings', { webPassword: 'secret' }, 'PUT');
   ok((await fetch(`${base}/api/channels`)).status === 401, 'API locked once password set');

@@ -37,22 +37,27 @@ class BoxOffice {
   known(key) { const e = this.map[key]; return !!e && (e.rev > 0 || Date.now() - e.at < BO_RETRY); }
   pending() { return this.queue.length + this.running; }
 
+  // How many of these still need a lookup.
+  unknown(movies) { let n = 0; for (const m of movies) if (!this.known('m' + m.id)) n++; return n; }
+
+  // Whatever the user is looking at goes to the front of the line; older, bigger requests wait behind it.
   enqueue(movies) {
     if (!this.enabled()) return;
-    for (const m of movies) {
-      const key = 'm' + m.id;
-      if (this.known(key) || this.queued.has(key)) continue;
-      this.queued.add(key); this.queue.push(m);
-    }
+    const fresh = movies.filter((m) => !this.known('m' + m.id) && !this.queued.has('r' + m.id));   // r = running
+    const ids = new Set(fresh.map((m) => m.id));
+    this.queue = [...fresh, ...this.queue.filter((m) => !ids.has(m.id))];
     this._pump();
   }
 
   _pump() {
-    while (this.running < 6 && this.queue.length) {
+    while (this.running < 12 && this.queue.length) {
       const m = this.queue.shift();
-      this.running++;
-      this._lookup(m).catch((e) => { this.stats.failed++; this.stats.lastError = e.message; })
-        .finally(() => { this.running--; this.queued.delete('m' + m.id); this._save(); this._pump(); });
+      this.running++; this.queued.add('r' + m.id);
+      this._lookup(m).catch((e) => {
+        this.stats.failed++; this.stats.lastError = e.message;
+        this.map['m' + m.id] = { rev: 0, at: Date.now() - BO_RETRY + 300000 };   // failed: leave it alone for 5 minutes
+      })
+        .finally(() => { this.running--; this.queued.delete('r' + m.id); this._save(); this._pump(); });
     }
   }
 
@@ -189,13 +194,13 @@ class Vod {
     if (isMovies && sort === 'boxoffice') this.box.enqueue(list);   // everything in view gets looked up in the background
     list.sort(cmp);
     const items = list.slice(offset, offset + limit).map((it) => ({
-      id: it.id, name: it.title || it.name, cat: it.cat, logo: it.logo, rating: it.rating, year: it.year,
+      id: it.id, name: it.title || it.name, cat: it.cat, logo: it.logo, rating: it.rating, year: it.year, ext: it.ext,
       ...(isMovies ? { gross: gross(it) } : {}),
     }));
     if (isMovies && sort !== 'boxoffice') this.box.enqueue(list.slice(offset, offset + limit));
     return {
       total: list.length, items,
-      boxoffice: isMovies ? { enabled: this.box.enabled(), pending: this.box.pending(), lastError: this.box.stats.lastError } : undefined,
+      boxoffice: isMovies ? { enabled: this.box.enabled(), pending: this.box.unknown(list), queued: this.box.pending(), lastError: this.box.stats.lastError } : undefined,
     };
   }
 
