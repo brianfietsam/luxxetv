@@ -21,6 +21,8 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
   | Original | no re-encode (.mkv) | source size |
 - Fragmented MP4: playable while recording, survives crashes; auto-reconnect and resume on stream drops
 - Optional GPU encoding (NVENC / QSV / AMF) auto-detected
+- **Movies & TV shows (Xtream VOD):** browse the provider's movie and series catalogs with search, category filter and sorting. Download a movie, a single episode, a whole season, or an entire show; files are saved untouched (no re-encode) in your **Download folder** as `Movies/Title (Year).ext` and `TV Shows/Show/Season 01/Show - S01E02 - Title.ext` (Plex/Jellyfin friendly). The Downloads tab shows progress, cancel, play and delete; interrupted transfers resume.
+- **Box office sort:** movies can be sorted by how much they made in theaters (worldwide gross, from TMDB). Needs a free TMDB API key in Settings; numbers are looked up in the background and cached on disk. Movies TMDB does not know sort last.
 - Web player: live TV is restreamed as H.264/AAC HLS (Tesla-compatible); recordings play with seeking
 - Provider credentials stay on the PC; the web UI never sees them
 - Closing the window hides to tray so scheduled recordings keep running

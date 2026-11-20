@@ -64,6 +64,8 @@ function setView(v) {
   document.querySelectorAll('#pivot button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== 'view-' + v; });
   if (v === 'guide' && dirtyGuide) { dirtyGuide = false; loadGuide(true); }
+  if (v === 'movies' || v === 'shows') openLib(v);
+  if (v === 'downloads') loadDownloads();
   if (v === 'recordings') loadRecordings();
   if (v === 'schedule') loadSchedules();
   if (v === 'settings') loadSettings();
@@ -411,7 +413,7 @@ function playChannel(ch) {
 /* ---------- keyboard (desktop speed) ---------- */
 addEventListener('keydown', (e) => {
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (e.key === 'Escape') { if (!$('#menu').hidden) closeMenu(); else if (!$('#stage').hidden) closeStage(); return; }
+  if (e.key === 'Escape') { if (!$('#sheet').hidden) sheetClose(); else if (!$('#menu').hidden) closeMenu(); else if (!$('#stage').hidden) closeStage(); return; }
   if (!$('#stage').hidden && !typing) {
     if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); zap(-1); }
     if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); zap(1); }
@@ -550,6 +552,7 @@ $('#catHideAll').onclick = bulk(true);
 
 const typeUi = () => { $('#xtreamF').hidden = $('#sType').value !== 'xtream'; $('#m3uF').hidden = $('#sType').value !== 'm3u'; };
 $('#sType').onchange = typeUi;
+if (window.desktop) { $('#browseDl').hidden = false; $('#browseDl').onclick = async () => { const d = await window.desktop.pickFolder(); if (d) $('#sDlDir').value = d; }; }
 if (window.desktop) { $('#browse').hidden = false; $('#browse').onclick = async () => { const d = await window.desktop.pickFolder(); if (d) $('#sDir').value = d; }; }
 
 async function loadSettings() {
@@ -557,6 +560,7 @@ async function loadSettings() {
   $('#sType').value = c.source.type; typeUi();
   $('#sServer').value = c.source.server; $('#sUser').value = c.source.username; $('#sM3u').value = c.source.m3uUrl;
   $('#sPass').placeholder = c.source.passwordSet ? '(saved, leave blank to keep)' : '';
+  $('#sDlDir').value = c.downloadDir; $('#sTmdb').placeholder = c.tmdbKeySet ? '(saved, leave blank to keep)' : 'optional';
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved, leave blank to keep)' : 'none (LAN only)';
@@ -574,12 +578,13 @@ $('#refresh').onclick = async () => {
     await saveSettings(true);
     const r = await api('/api/refresh', { method: 'POST' });
     $('#refreshMsg').textContent = `✔ ${r.channels} channels in ${r.categories} categories`;
-    await loadRail(); dirtyGuide = true;
+    await loadRail(); dirtyGuide = true; LIB.movies.init = LIB.shows.init = false;   // movie/show lists reload on next visit
   } catch (e) { $('#refreshMsg').textContent = '✘ ' + e.message; }
 };
 async function saveSettings(quiet) {
   const body = {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
+    downloadDir: $('#sDlDir').value.trim(), tmdbKey: $('#sTmdb').value.trim(), clearTmdbKey: $('#sClearTmdb').checked,
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,
     epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), commSkip: $('#sComm').value, comskipPath: $('#sCs').value.trim(), encoder: $('#sEnc').value,

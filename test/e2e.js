@@ -88,6 +88,42 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   const list2 = await j('/api/recordings');
   ok(list2.some((r) => r.name.includes('Scheduled Test') && r.size > 20000), 'scheduled recording file saved with program title');
 
+  // ---- VOD: movies, series, box-office sort, downloads ----
+  const dlDir = path.join(tmp, 'dl');
+  await post('/api/settings', { downloadDir: dlDir, tmdbKey: 'testkey', tmdbBase: 'http://127.0.0.1:9099/tmdb' }, 'PUT');
+  ok(!JSON.stringify(await j('/api/settings')).includes('testkey'), 'TMDB key not exposed by settings API');
+  const mcats = await j('/api/vod/categories?kind=movies');
+  ok(mcats.length === 2 && mcats[0].count >= 1, 'movie categories');
+  let mv;
+  for (let i = 0; i < 20; i++) { mv = await j('/api/vod/items?kind=movies&sort=boxoffice'); if (!mv.boxoffice.pending) break; await sleep(300); }
+  mv = await j('/api/vod/items?kind=movies&sort=boxoffice');
+  ok(mv.total === 3 && mv.items[0].name === 'Big Blockbuster' && mv.items[0].gross === 463000000, 'movies sorted by box office (tmdb id)');
+  ok(mv.items[1].name === 'Small Drama' && mv.items[1].gross === 12000000, 'box office found by title search when no tmdb id');
+  ok(mv.items[2].gross === null, 'unknown box office sorts last');
+  ok((await j('/api/vod/items?kind=movies&sort=rating')).items[0].name === 'Small Drama', 'sort by rating');
+  ok((await j('/api/vod/items?kind=movies&q=gem')).total === 1, 'movie search');
+  ok(!JSON.stringify(mv).includes('"p"'), 'no credentials leak in movie list');
+  const sr1 = await j('/api/vod/items?kind=series');
+  ok(sr1.total === 1, 'series list');
+  const show = await j('/api/vod/series/7');
+  ok(show.seasons.length === 2 && show.seasons[0].episodes.length === 2, 'series seasons/episodes');
+
+  const waitDl = async (n) => { let d; for (let i = 0; i < 40; i++) { d = await j('/api/downloads'); if (d.jobs.length >= n && d.jobs.every((x) => x.status === 'done' || x.status === 'failed')) break; await sleep(250); } return d; };
+  await post('/api/downloads', { type: 'movie', id: mv.items[0].id });
+  let d = await waitDl(1);
+  ok(d.jobs[0].status === 'done' && d.files.some((f) => f.rel === 'Movies/Big Blockbuster (2003).mp4' && f.size === 300000), 'movie downloaded with Plex-style name');
+  const q2 = await post('/api/downloads', { type: 'season', seriesId: '7', season: 1 });
+  ok(q2.queued === 2, 'season queues 2 episodes');
+  await post('/api/downloads', { type: 'series', seriesId: '7' });
+  d = await waitDl(4);
+  ok(d.files.some((f) => f.rel === 'TV Shows/Space Show/Season 01/Space Show - S01E02 - Orbit.mp4') && d.files.some((f) => f.rel.endsWith('Season 02/Space Show - S02E01 - Return.mkv')), 'show episodes saved by season');
+  ok(d.files.length === 4 && d.jobs.every((x) => x.status === 'done'), 'whole-show download completes without duplicates');
+  const dlr = await fetch(`${base}/dl?f=${encodeURIComponent('Movies/Big Blockbuster (2003).mp4')}`);
+  ok(dlr.status === 200, 'downloaded file served');
+  ok((await fetch(`${base}/dl?f=${encodeURIComponent('../config.json')}`)).status === 404, 'download path traversal blocked');
+  await j('/api/downloads/file?f=' + encodeURIComponent('Movies/Big Blockbuster (2003).mp4'), { method: 'DELETE' });
+  ok((await j('/api/downloads')).files.length === 3, 'downloaded file deleted');
+
   // auth + LAN guard
   await post('/api/settings', { webPassword: 'secret' }, 'PUT');
   ok((await fetch(`${base}/api/channels`)).status === 401, 'API locked once password set');

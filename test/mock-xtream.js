@@ -11,7 +11,9 @@ const RICH_CHANNELS = [
   ['Cinema Classics', '3'], ['Action Movies HD', '3'], ['Late Night Cinema', '3'], ['Indie Film', '3'],
   ['Toon Parade', '4'], ['Little Explorers', '4'], ['Storytime TV', '4'],
 ];
-const TITLES = ['Morning Report', 'The Big Match', 'Grand Prix Live', 'Highlights Show', 'Evening News', 'Market Watch', 'The Long Goodbye', 'Night Heist', 'Space Pups', 'Bedtime Stories', 'Weather and Traffic', 'Documentary: Deep Blue', 'Studio Sessions', 'Cooking With Fire', 'Late Edition', 'Coastal Walks', 'Championship Replay', 'Kids Quiz', 'Detective Mara', 'The Last Lighthouse'];
+// [name, category, rating(0-5), tmdb id]  - "Small Drama" has no tmdb id so it is found by title search
+const MOVIES = [['Big Blockbuster (2003)', '10', 4, '603'], ['Small Drama (2010)', '11', 5, ''], ['Unknown Gem', '11', 3, '999']];
+const TITLES =['Morning Report', 'The Big Match', 'Grand Prix Live', 'Highlights Show', 'Evening News', 'Market Watch', 'The Long Goodbye', 'Night Heist', 'Space Pups', 'Bedtime Stories', 'Weather and Traffic', 'Documentary: Deep Blue', 'Studio Sessions', 'Cooking With Fire', 'Late Edition', 'Coastal Walks', 'Championship Replay', 'Kids Quiz', 'Detective Mara', 'The Last Lighthouse'];
 const LENGTHS = [30, 60, 90, 120, 45, 25, 60, 30];
 
 function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
@@ -28,8 +30,26 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
         { stream_id: 1, name: 'Test Pattern HD', category_id: '1', stream_icon: '', epg_channel_id: 'Test.One' },
         { stream_id: 2, name: 'Second Channel', category_id: '2', stream_icon: '', epg_channel_id: '' }]));
       if (a === 'get_short_epg') return res.end(JSON.stringify({ epg_listings: [{ title: Buffer.from('Test Show').toString('base64'), description: Buffer.from('Fake EPG').toString('base64'), start_timestamp: String(Date.now() / 1000 - 600 | 0), stop_timestamp: String(Date.now() / 1000 + 1200 | 0) }] }));
+      if (a === 'get_vod_categories') return res.end(JSON.stringify([{ category_id: '10', category_name: 'Action' }, { category_id: '11', category_name: 'Drama' }]));
+      if (a === 'get_vod_streams') return res.end(JSON.stringify(MOVIES.map((m, i) => ({ stream_id: 100 + i, name: m[0], category_id: m[1], stream_icon: '', rating_5based: m[2], added: String(1700000000 + i), container_extension: 'mp4', tmdb: m[3] }))));
+      if (a === 'get_series_categories') return res.end(JSON.stringify([{ category_id: '20', category_name: 'Sci-Fi' }]));
+      if (a === 'get_series') return res.end(JSON.stringify([{ series_id: 7, name: 'Space Show (2021)', category_id: '20', cover: '', rating_5based: 4, last_modified: '1700000000' }]));
+      if (a === 'get_series_info') return res.end(JSON.stringify({ info: { name: 'Space Show', plot: 'Space.' }, episodes: {
+        1: [{ id: '501', episode_num: 1, title: 'Pilot', season: 1, container_extension: 'mp4', info: { duration: '00:00:02' } }, { id: '502', episode_num: 2, title: 'Orbit', season: 1, container_extension: 'mp4' }],
+        2: [{ id: '601', episode_num: 1, title: 'Return', season: 2, container_extension: 'mkv' }] } }));
       return res.end('{}');
     }
+    if (u.pathname.startsWith('/movie/u/p/') || u.pathname.startsWith('/series/u/p/')) {
+      const body = Buffer.alloc(300000, 7);            // 300 KB fake video; honours Range so resume works
+      const m = /bytes=(\d+)-/.exec(req.headers.range || '');
+      if (m) { res.writeHead(206, { 'Content-Length': body.length - +m[1], 'Content-Range': `bytes ${m[1]}-${body.length - 1}/${body.length}` }); return res.end(body.subarray(+m[1])); }
+      res.writeHead(200, { 'Content-Length': body.length, 'Content-Type': 'video/mp4' });
+      return res.end(body);
+    }
+    if (u.pathname === '/tmdb/movie/603') return res.end(JSON.stringify({ revenue: 463000000 }));
+    if (u.pathname === '/tmdb/movie/604') return res.end(JSON.stringify({ revenue: 12000000 }));
+    if (u.pathname === '/tmdb/search/movie') return res.end(JSON.stringify({ results: [{ id: 604 }] }));
+    if (u.pathname.startsWith('/tmdb/')) { res.statusCode = 404; return res.end('{}'); }
     if (u.pathname === '/xmltv.php') {
       // 30-minute programmes, from 2h ago to 48h ahead, timestamps written with a +0100 offset
       const pad = (n) => String(n).padStart(2, '0');

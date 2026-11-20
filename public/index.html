@@ -13,7 +13,10 @@
   <h1 class="brand">Luxxe<span>TV</span></h1>
   <nav id="pivot" aria-label="Sections">
     <button data-view="guide" class="on">guide</button>
+    <button data-view="movies">movies</button>
+    <button data-view="shows">tv shows</button>
     <button data-view="recordings">recordings</button>
+    <button data-view="downloads">downloads</button>
     <button data-view="schedule">schedule</button>
     <button data-view="settings">settings</button>
   </nav>
@@ -44,6 +47,40 @@
       </div>
       <div id="rows" tabindex="-1"></div>
     </div>
+  </section>
+
+  <!-- ============ MOVIES / TV SHOWS ============ -->
+  <section id="view-movies" class="view page lib" hidden>
+    <h1 class="display">movies</h1>
+    <div class="libtools">
+      <input id="moviesQ" type="search" placeholder="search movies" aria-label="Search movies">
+      <select id="moviesCat" aria-label="Category"></select>
+      <select id="moviesSort" aria-label="Sort by"><option value="boxoffice">box office (highest first)</option><option value="rating">rating</option><option value="added">recently added</option><option value="year">year</option><option value="name">title A-Z</option></select>
+    </div>
+    <p id="moviesNote" class="muted"></p>
+    <div id="moviesGrid" class="grid"></div>
+    <button type="button" id="moviesMore" hidden>show more</button>
+  </section>
+
+  <section id="view-shows" class="view page lib" hidden>
+    <h1 class="display">tv shows</h1>
+    <div class="libtools">
+      <input id="showsQ" type="search" placeholder="search tv shows" aria-label="Search tv shows">
+      <select id="showsCat" aria-label="Category"></select>
+      <select id="showsSort" aria-label="Sort by"><option value="added">recently updated</option><option value="rating">rating</option><option value="year">year</option><option value="name">title A-Z</option></select>
+    </div>
+    <p id="showsNote" class="muted"></p>
+    <div id="showsGrid" class="grid"></div>
+    <button type="button" id="showsMore" hidden>show more</button>
+  </section>
+
+  <!-- ============ DOWNLOADS ============ -->
+  <section id="view-downloads" class="view page" hidden>
+    <h1 class="display">downloads</h1>
+    <div class="row"><button type="button" id="dlClear">clear finished</button></div>
+    <div id="dlJobs"></div>
+    <h2 class="sub">saved files</h2>
+    <div id="dlFiles"></div>
   </section>
 
   <!-- ============ RECORDINGS ============ -->
@@ -132,6 +169,14 @@
         <label>Stop late (min) <input id="sPadA" type="number" min="0" max="60"></label>
       </div>
 
+      <h2>movies &amp; tv shows</h2>
+      <label>Download folder
+        <span class="row"><input id="sDlDir"><button type="button" id="browseDl" hidden>browse…</button></span>
+      </label>
+      <label>TMDB API key, optional (enables box-office sorting) <input id="sTmdb" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
+      <label class="chk"><input id="sClearTmdb" type="checkbox"><span>Remove TMDB key</span></label>
+      <p class="muted">Box office comes from TMDB (worldwide gross). Free key: themoviedb.org, Settings, API.</p>
+
       <h2>web player</h2>
       <label>Live stream quality
         <select id="sLiveQ"><option>480p</option><option>720p</option><option>1080p</option><option value="copy">Passthrough video (needs H.264 source)</option></select>
@@ -172,6 +217,14 @@
 
 <!-- ============ ACTION SHEET (right-click / long-press) ============ -->
 <div id="menu" hidden role="menu"></div>
+<div id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="shTitle">
+  <div class="sh-in">
+    <div class="sh-top"><h2 id="shTitle"></h2><button type="button" id="shClose" aria-label="Close">✕</button></div>
+    <p id="shMeta" class="muted"></p>
+    <p id="shPlot"></p>
+    <div id="shBody"></div>
+  </div>
+</div>
 <div id="toast" hidden role="status"></div>
 
 <div id="login" hidden>
@@ -185,5 +238,6 @@
 
 <script src="/vendor/hls.min.js"></script>
 <script src="app.js"></script>
+<script src="vod.js"></script>
 </body>
 </html>

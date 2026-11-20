@@ -9,6 +9,8 @@ const { Recorder } = require('./recorder');
 const { Live } = require('./live');
 const { Scheduler } = require('./scheduler');
 const { Epg } = require('./epg');
+const { Vod } = require('./vod');
+const { Downloads } = require('./downloads');
 const { findFfmpeg, listEncoders } = require('./ffmpeg');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -30,6 +32,8 @@ async function start({ dataDir, port }) {
   const recorder = new Recorder({ cfg, sources, getFfmpeg });
   const live = new Live({ cfg, sources, getFfmpeg });
   const scheduler = new Scheduler({ cfg, dataDir, recorder, sources });
+  const vod = new Vod({ cfg, sources, dataDir });
+  const downloads = new Downloads({ cfg, vod });
   const desktopToken = crypto.randomBytes(16).toString('hex');
 
   const authToken = () => crypto.createHmac('sha256', cfg.get().sessionSecret).update('luxxetv-ok:' + cfg.get().webPassword).digest('hex');
@@ -80,7 +84,7 @@ async function start({ dataDir, port }) {
   app.get('/vendor/hls.min.js', (req, res) => res.sendFile(HLS_JS));
 
   const guard = (req, res, next) => (authed(req) ? next() : res.status(401).json({ error: 'auth' }));
-  app.use(['/api', '/live', '/rec'], guard);
+  app.use(['/api', '/live', '/rec', '/dl'], guard);
 
   // ---- channels ----
   app.get('/api/categories', wrap(async (req, res) => {
@@ -118,7 +122,7 @@ async function start({ dataDir, port }) {
     res.json({ ok: true, count: set.size });
   }));
   app.post('/api/refresh', wrap(async (req, res) => {
-    sources.invalidate(); epg.invalidate();
+    sources.invalidate(); epg.invalidate(); vod.invalidate();
     const d = await sources.ensure(true);
     epg.ensureStarted(true);
     res.json({ channels: d.channels.length, categories: d.categories.length });
@@ -167,6 +171,37 @@ async function start({ dataDir, port }) {
     res.sendFile(f); // supports HTTP Range -> seeking
   });
 
+  // ---- movies & TV shows (Xtream VOD) ----
+  const kindOf = (req) => (req.query.kind === 'series' ? 'series' : 'movies');
+  app.get('/api/vod/categories', wrap(async (req, res) => res.json(await vod.categories(kindOf(req)))));
+  app.get('/api/vod/items', wrap(async (req, res) => {
+    res.json(await vod.query({ kind: kindOf(req), cat: req.query.cat, q: req.query.q, sort: req.query.sort,
+      offset: +req.query.offset || 0, limit: Math.min(+req.query.limit || 60, 200) }));
+  }));
+  app.get('/api/vod/series/:id', wrap(async (req, res) => res.json(await vod.series(req.params.id))));
+
+  // ---- downloads ----
+  app.post('/api/downloads', wrap(async (req, res) => {
+    const b = req.body || {};
+    let jobs;
+    if (b.type === 'movie') jobs = await downloads.addMovie(b.id);
+    else if (b.type === 'season') jobs = await downloads.addEpisodes(b.seriesId, { season: b.season });
+    else if (b.type === 'series') jobs = await downloads.addEpisodes(b.seriesId);
+    else if (b.type === 'episode') jobs = await downloads.addEpisodes(b.seriesId, { episodeId: b.episodeId });
+    else return res.status(400).json({ error: 'Unknown download type' });
+    res.json({ queued: jobs.length, jobs });
+  }));
+  app.get('/api/downloads', (req, res) => res.json({ jobs: downloads.list(), files: downloads.files() }));
+  app.post('/api/downloads/clear', (req, res) => { downloads.clearFinished(); res.json({ ok: true }); });
+  app.post('/api/downloads/:id/cancel', (req, res) => res.json({ ok: downloads.cancel(req.params.id) }));
+  app.delete('/api/downloads/file', (req, res) => res.json({ ok: downloads.remove(req.query.f) }));
+  app.get('/dl', (req, res) => {
+    const f = downloads.resolve(req.query.f);
+    if (!f) return res.status(404).end();
+    if (req.query.download) return res.download(f);
+    res.sendFile(f);
+  });
+
   // ---- schedules ----
   app.get('/api/schedules', (req, res) => res.json(scheduler.list()));
   app.post('/api/schedules', wrap(async (req, res) => res.json(await scheduler.add(req.body))));
@@ -194,6 +229,7 @@ async function start({ dataDir, port }) {
     delete c.sessionSecret;
     c.source.passwordSet = !!c.source.password; c.source.password = '';
     c.webPasswordSet = !!c.webPassword; c.webPassword = '';
+    c.tmdbKeySet = !!c.tmdbKey; c.tmdbKey = '';
     res.json(c);
   });
   app.put('/api/settings', wrap(async (req, res) => {
@@ -204,8 +240,11 @@ async function start({ dataDir, port }) {
     if (p.clearWebPassword) { p.webPassword = ''; delete p.clearWebPassword; }
     delete p.webPasswordSet;
     if (p.source) delete p.source.passwordSet;
+    if (p.tmdbKey === '') delete p.tmdbKey;                            // blank = keep
+    if (p.clearTmdbKey) { p.tmdbKey = ''; delete p.clearTmdbKey; }
+    delete p.tmdbKeySet;
     cfg.update(p);
-    sources.invalidate(); epg.invalidate();
+    sources.invalidate(); epg.invalidate(); vod.invalidate();
     ffmpeg = findFfmpeg(cfg.get().ffmpegPath);
     if (p.webPassword) setAuthCookie(res);   // keep the current browser logged in
     res.json({ ok: true, restartNeeded: p.port !== undefined || p.listenAll !== undefined });
@@ -227,7 +266,7 @@ async function start({ dataDir, port }) {
   return {
     port: server.address().port, desktopToken, cfg, recorder,
     async shutdown() {
-      scheduler.shutdown(); live.shutdown();
+      scheduler.shutdown(); live.shutdown(); downloads.cancelAll();
       await recorder.stopAll();
       server.close();
     },

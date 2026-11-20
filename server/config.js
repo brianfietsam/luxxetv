@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const DEFAULTS = {
   source: { type: 'xtream', server: '', username: '', password: '', m3uUrl: '' },
   recordDir: path.join(os.homedir(), 'Videos', 'LuxxeTV'),
+  downloadDir: path.join(os.homedir(), 'Videos', 'LuxxeTV Downloads'),
+  tmdbKey: '',               // optional TMDB API key (v3 key or v4 token): enables box-office sorting for movies
+  tmdbBase: '',              // blank = https://api.themoviedb.org/3 (override for testing)
   recordQuality: 'balanced', // small | balanced | high | copy
   liveQuality: '720p',       // 480p | 720p | 1080p | copy
   encoder: 'libx264',        // libx264 | h264_nvenc | h264_qsv | h264_amf
