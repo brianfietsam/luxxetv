@@ -64,7 +64,8 @@ function setView(v) {
   document.querySelectorAll('#pivot button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== 'view-' + v; });
   if (v === 'guide' && dirtyGuide) { dirtyGuide = false; loadGuide(true); }
-  if (v === 'movies' || v === 'shows') openLib(v);
+  if (v === 'movies') openMovies();
+  if (v === 'shows') openLib(v);
   if (v === 'downloads') loadDownloads();
   if (v === 'recordings') loadRecordings();
   if (v === 'schedule') loadSchedules();
@@ -555,13 +556,16 @@ const typeUi = () => { $('#xtreamF').hidden = $('#sType').value !== 'xtream'; $(
 $('#sType').onchange = typeUi;
 if (window.desktop) { $('#browseDl').hidden = false; $('#browseDl').onclick = async () => { const d = await window.desktop.pickFolder(); if (d) $('#sDlDir').value = d; }; }
 if (window.desktop) { $('#browse').hidden = false; $('#browse').onclick = async () => { const d = await window.desktop.pickFolder(); if (d) $('#sDir').value = d; }; }
+if (window.desktop) { $('#browseMovies').hidden = false; $('#browseMovies').onclick = async () => { const d = await window.desktop.pickFolder(); if (d) $('#sMovieDir').value = d; }; }
 
 async function loadSettings() {
   const [c, sys] = await Promise.all([api('/api/settings'), api('/api/system')]);
   $('#sType').value = c.source.type; typeUi();
   $('#sServer').value = c.source.server; $('#sUser').value = c.source.username; $('#sM3u').value = c.source.m3uUrl;
   $('#sPass').placeholder = c.source.passwordSet ? '(saved, leave blank to keep)' : '';
-  $('#sDlDir').value = c.downloadDir; $('#sTmdb').placeholder = c.tmdbKeySet ? '(saved, leave blank to keep)' : 'optional';
+  $('#sDlDir').value = c.downloadDir; $('#sTmdb').placeholder = c.tmdbKeySet ? '(saved, leave blank to keep)' : '(not set)';
+  $('#sTmdb').value = ''; $('#sClearTmdb').checked = false;
+  $('#sRegion').value = c.tmdbRegion || 'US'; $('#sMovieDir').value = c.movieDir || ''; $('#sMovieHrs').value = c.movieCheckHours;
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved, leave blank to keep)' : 'none (LAN only)';
@@ -572,6 +576,11 @@ async function loadSettings() {
   $('#urls').replaceChildren(el('h2', { textContent: 'open on your tesla or phone' }),
     el('div', { className: 'muted', textContent: `At home (same Wi-Fi): http://<this-PC-IP>:${sys.port}/   (this page: ${location.origin})` }),
     el('div', { className: 'muted', textContent: 'Away from home: put a Cloudflare Tunnel or similar in front of this port, and set a web password first. See the README.' }));
+  $('#about').replaceChildren(el('h2', { textContent: 'about luxxetv' }),
+    el('div', { className: 'muted', textContent: `Version: ${sys.version}` }),
+    el('div', { className: 'muted', textContent: `Commit: ${sys.commit}` }),
+    el('div', { className: 'muted', textContent: `Environment: ${sys.environment}` }),
+    el('div', { className: 'muted', textContent: `Build date: ${sys.buildDate ? new Date(sys.buildDate).toLocaleDateString() : 'development build'}` }));
 }
 $('#refresh').onclick = async () => {
   $('#refreshMsg').textContent = 'Saving and loading…';
@@ -586,6 +595,7 @@ async function saveSettings(quiet) {
   const body = {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
     downloadDir: $('#sDlDir').value.trim(), tmdbKey: $('#sTmdb').value.trim(), clearTmdbKey: $('#sClearTmdb').checked,
+    tmdbRegion: ($('#sRegion').value.trim() || 'US').toUpperCase(), movieDir: $('#sMovieDir').value.trim(), movieCheckHours: +$('#sMovieHrs').value || 3,
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,
     epgUrl: $('#sEpg').value.trim(), port: +$('#sPort').value, listenAll: $('#sListen').checked, ffmpegPath: $('#sFf').value.trim(), commSkip: $('#sComm').value, comskipPath: $('#sCs').value.trim(), encoder: $('#sEnc').value,
@@ -609,6 +619,6 @@ $('#setForm').onsubmit = async (e) => { e.preventDefault(); try { await saveSett
   cur.cat = saved === FAV || cats.some((c) => c.name === saved) ? saved : FAV;
   if (cur.cat === FAV && !favs.size && cats[0]) cur.cat = cats[0].name;   // nothing pinned yet: start on a real category
   setTitle(); markRail();
-  loadGuide(true); pollStatus();
+  loadGuide(true); pollStatus(); countWatch();
   setInterval(pollStatus, 5000);
 })();

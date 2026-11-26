@@ -23,6 +23,12 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
 - Optional GPU encoding (NVENC / QSV / AMF) auto-detected
 - **Movies & TV shows (Xtream VOD):** browse the provider's movie and series catalogs with search, category filter and sorting. Download a movie, a single episode, a whole season, or an entire show; files are saved untouched (no re-encode) in your **Download folder** as `Movies/Title (Year).ext` and `TV Shows/Show/Season 01/Show - S01E02 - Title.ext` (Plex/Jellyfin friendly). The Downloads tab shows progress, cancel, play and delete; interrupted transfers resume.
 - **Box office sort:** movies can be sorted by how much they made in theaters (worldwide gross, from TMDB). Needs a free TMDB API key in Settings; numbers are looked up in the background and cached on disk. Movies TMDB does not know sort last.
+- **Release dates** (in the movies view; needs a free [TMDB](https://www.themoviedb.org/settings/api) API key, set in Settings → movies & tv shows):
+  - *Coming to theaters* (major releases, next ~6 months), *In theaters*, and *Streaming soon* (digital releases from the last 30 days to the next 90)
+  - Each movie shows its **theater date** and **streaming (digital) date** for your country. If the studio hasn't announced a streaming date, an estimate (~45 days after theaters) is shown and marked *est.*
+  - A green *On your provider* badge when the movie is already in your Xtream VOD library
+  - Search any movie to add it
+- **Auto-download watchlist**: tap *＋ Download when available* and LuxxeTV checks your Xtream provider's movie library every few hours (configurable) and downloads the movie as soon as it appears, to `<Download folder>\Movies` by default (so they also appear in the Downloads tab). CAM/telesync copies are skipped; a 1080p copy is preferred over 4K; interrupted downloads resume. Downloaded MP4s play in the web player. Needs an Xtream Codes playlist (M3U playlists don't expose a movie library).
 - Web player: live TV is restreamed as H.264/AAC HLS (Tesla-compatible); recordings play with seeking
 - Provider credentials stay on the PC; the web UI never sees them
 - Closing the window hides to tray so scheduled recordings keep running
@@ -43,6 +49,9 @@ Open **Settings**, enter your playlist, pick a save folder, press *Test & reload
 - **Home Wi-Fi:** browse to `http://<PC-IP>:8484/` (allow Node/LuxxeTV through Windows Firewall when prompted; give the PC a fixed IP/DHCP reservation).
 - **Away from home:** the Tesla browser can't run a VPN, so expose the port with a tunnel, e.g. Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:8484`) – **set a web password in Settings first**. Without a password the server only accepts private-network, non-proxied requests.
 - Tesla only plays video while parked. Pick a lower *Live stream quality* (480p/720p) on cellular.
+
+## Version
+The app version, git commit, environment and build date are shown in **Settings → About**. `npm run dist` stamps the commit and build date into the installer.
 
 ## Notes
 - Config/schedules live in `%APPDATA%\luxxetv`. Live HLS temp files are in the system temp folder and deleted 30 s after you stop watching.

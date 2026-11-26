@@ -1,5 +1,6 @@
 'use strict';
-// Xtream VOD: movie + TV-series catalogs, series episode lists, stream URLs, and box-office enrichment (TMDB).
+// Xtream VOD: movie + TV-series catalogs, series episode lists, stream URLs, box-office enrichment (TMDB),
+// and matching the movie library against TMDB movies for the release lists and watchlist.
 const fs = require('fs');
 const path = require('path');
 
@@ -22,9 +23,68 @@ function cleanTitle(raw) {
   return { title: s, year };
 }
 
+// Pre-release rips that show up on providers before the real digital release; never auto-download these.
+const LOW_QUALITY = /\b(cam|camrip|hdcam|hd-?cam|ts|hdts|hd-?ts|telesync|telecine|tc|hdtc|scr|screener)\b/i;
+const NOISE = /\b(4k|uhd|2160p|1080p|720p|480p|fhd|hd|sd|hq|hevc|h ?26[45]|x26[45]|hdr10?|dolby vision|atmos|web-?dl|web-?rip|webrip|bluray|blu-ray|brrip|bdrip|remux|multi|multisub|multi-sub|subs|subbed|dub|dubbed|vost|vostfr|imax|extended|unrated|directors cut|remastered)\b/gi;
+// Leading provider tags such as "EN - ", "|EN| ", "[4K] ", "NF: ", "US| ".
+// Titles like "TRON: Legacy" also look like a tag, so matching tries the name with and without prefixes.
+const PREFIX = /^\s*(?:[|[({]\s*[^|\])}]{1,14}\s*[|\])}]|[A-Z0-9]{2,5}(?:[-+][A-Z0-9]{2,5})?(?:\s*[:|•»]|\s+-|-\s+))\s*/;
+
+function stripPrefixes(s) {
+  let prev;
+  do { prev = s; s = s.replace(PREFIX, ''); } while (s !== prev && s);
+  return s;
+}
+
+function norm(s) {
+  return String(s || '')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/['’`]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/^(the|a|an) /, '')
+    .trim();
+}
+
+function matchParts(s) {
+  const yearM = s.match(/[([]\s*((?:19|20)\d{2})\s*[)\]]/) || s.match(/(?:^|[\s.-])((?:19|20)\d{2})(?=[\s.)\]-]*(?:$|[[(|]|\b(?:4k|uhd|fhd|hd|1080p|720p|2160p|multi)\b))/i);
+  const year = yearM ? +yearM[1] : null;
+  if (yearM) s = s.slice(0, yearM.index) + ' ' + s.slice(yearM.index + yearM[0].length);
+  s = s.replace(/[[({][^\])}]*[\])}]/g, ' ').replace(/\./g, ' ').replace(NOISE, ' ');
+  return { title: norm(s), year };
+}
+
+// "EN - Dune: Part Two (2024) [4K]" -> { title: "dune part two", titles: [...], year: 2024, uhd: true }
+function parseVodName(name) {
+  const raw = String(name || '');
+  const a = matchParts(stripPrefixes(raw)), b = matchParts(raw);
+  return { title: a.title, titles: [...new Set([a.title, b.title].filter(Boolean))], year: a.year || b.year,
+    uhd: /\b(4k|uhd|2160p)\b/i.test(raw), lowQuality: LOW_QUALITY.test(raw.replace(/[._]/g, ' ')) };
+}
+
+// Best VOD entry for a movie, or null. tmdb id match wins; otherwise exact normalised title (+ year when known).
+function findMatch(movie, vodItems) {
+  const titles = new Set([norm(movie.title), norm(movie.originalTitle)].filter(Boolean));
+  let best = null, bestScore = -Infinity;
+  for (const v of vodItems) {
+    if (v.p.lowQuality) continue;
+    let score;
+    if (v.tmdb && String(v.tmdb) === String(movie.id)) score = 100;
+    else {
+      if (!v.p.titles.some((t) => titles.has(t))) continue;
+      if (movie.year && v.p.year) { if (Math.abs(movie.year - v.p.year) > 1) continue; score = 20; }
+      else score = 5;   // no year on one side: title-only match
+    }
+    if (v.p.uhd) score -= 3;        // prefer 1080p over huge 4K files when both exist
+    if (score > bestScore) { bestScore = score; best = v; }
+  }
+  return best;
+}
+
 class BoxOffice {
-  constructor({ cfg, dataDir }) {
-    this.cfg = cfg;
+  constructor({ tmdb, dataDir }) {
+    this.tmdb = tmdb;
     this.file = path.join(dataDir, 'boxoffice.json');
     this.map = {};
     try { this.map = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* first run */ }
@@ -32,7 +92,7 @@ class BoxOffice {
     this.stats = { done: 0, failed: 0, lastError: '' };
   }
 
-  enabled() { return !!(this.cfg.get().tmdbKey || '').trim(); }
+  enabled() { return this.tmdb.configured(); }
   gross(key) { const e = this.map[key]; return e && e.rev > 0 ? e.rev : null; }
   known(key) { const e = this.map[key]; return !!e && (e.rev > 0 || Date.now() - e.at < BO_RETRY); }
   pending() { return this.queue.length + this.running; }
@@ -61,32 +121,17 @@ class BoxOffice {
     }
   }
 
-  async _tmdb(p, params = {}) {
-    const c = this.cfg.get();
-    const key = c.tmdbKey.trim();
-    const base = (c.tmdbBase || 'https://api.themoviedb.org/3').replace(/\/+$/, '');
-    const qs = new URLSearchParams(params);
-    const headers = { Accept: 'application/json' };
-    if (key.length > 40) headers.Authorization = 'Bearer ' + key; else qs.set('api_key', key);   // v4 token or v3 key
-    const res = await fetch(`${base}${p}?${qs}`, { headers, signal: AbortSignal.timeout(20000) });
-    if (res.status === 429) { await new Promise((r) => setTimeout(r, 2000)); throw new Error('TMDB rate limit'); }
-    if (res.status === 401) throw new Error('TMDB rejected the API key');
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error('TMDB HTTP ' + res.status);
-    return res.json();
-  }
-
   async _lookup(m) {
     let tmdb = m.tmdb;
     if (!tmdb) {
       const { title, year } = cleanTitle(m.name);
       if (!title) return void (this.map['m' + m.id] = { rev: 0, at: Date.now() });
-      const r = await this._tmdb('/search/movie', { query: title, ...(year || m.year ? { year: year || m.year } : {}) });
+      const r = await this.tmdb.find('/search/movie', { query: title, ...(year || m.year ? { year: year || m.year } : {}) });
       const hit = r && r.results && r.results[0];
       tmdb = hit && hit.id;
     }
     let rev = 0;
-    if (tmdb) { const d = await this._tmdb('/movie/' + encodeURIComponent(tmdb)); rev = d ? num(d.revenue) : 0; }
+    if (tmdb) { const d = await this.tmdb.find('/movie/' + encodeURIComponent(tmdb)); rev = d ? num(d.revenue) : 0; }
     this.map['m' + m.id] = { rev, at: Date.now() };
     this.stats.done++;
   }
@@ -102,11 +147,12 @@ class BoxOffice {
 }
 
 class Vod {
-  constructor({ cfg, sources, dataDir }) {
+  constructor({ cfg, sources, tmdb, dataDir }) {
     this.cfg = cfg; this.sources = sources; this.dataDir = dataDir;
     this.mem = {};
+    this.loading = new Map();
     this.info = new Map();
-    this.box = new BoxOffice({ cfg, dataDir });
+    this.box = new BoxOffice({ tmdb, dataDir });
   }
 
   _requireXtream() {
@@ -131,7 +177,8 @@ class Vod {
         id: String(x[idKey]), name: x.name, cat: catName.get(String(x.category_id)) || 'Uncategorized',
         logo: x[logoKey] || '', rating: num(x.rating_5based) ? num(x.rating_5based) * 2 : num(x.rating),
         added: num(x.added || x.last_modified), year: num(x.year) || year || num(String(x.releaseDate || x.release_date || '').slice(0, 4)),
-        ext: x.container_extension || 'mp4', tmdb: x.tmdb && x.tmdb !== '0' ? String(x.tmdb) : '', title,
+        ext: String(x.container_extension || 'mp4').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'mp4',
+        tmdb: [x.tmdb, x.tmdb_id].map((v) => String(v || '')).find((v) => v && v !== '0') || '', title,
       };
     });
     return { categories, items };
@@ -148,10 +195,31 @@ class Vod {
         if (c.sig === sig && Date.now() - c.at < TTL) return (this.mem[kind] = this._index(c));
       } catch { /* no cache */ }
     }
-    const data = await this._load(kind);
-    const c = { at: Date.now(), sig, ...data };
-    fs.writeFileSync(file, JSON.stringify(c));
-    return (this.mem[kind] = this._index(c));
+    // Pages, badges and the watchlist can all ask at once: share one provider request.
+    const key = kind + sig;
+    if (!this.loading.has(key)) {
+      this.loading.set(key, (async () => {
+        const data = await this._load(kind);
+        const c = { at: Date.now(), sig, ...data };
+        fs.writeFileSync(file, JSON.stringify(c));
+        return (this.mem[kind] = this._index(c));
+      })().finally(() => this.loading.delete(key)));
+    }
+    return this.loading.get(key);
+  }
+
+  // ---- the movie catalog in the shape findMatch() wants ----
+  _matchable(d) {
+    if (!d.matchable) d.matchable = d.items.map((i) => ({ streamId: i.id, name: String(i.name || ''), ext: i.ext, tmdb: i.tmdb, p: parseVodName(i.name) }));
+    return { at: d.at, items: d.matchable };
+  }
+
+  async library(force = false) { return this._matchable(await this.ensure('movies', force)); }
+
+  // Already-loaded, still-current library, or null. Never touches the network.
+  cachedLibrary() {
+    const m = this.mem.movies;
+    return m && Date.now() - m.at < TTL && m.sig === this.sources._sig() ? this._matchable(m) : null;
   }
 
   _index(c) {
@@ -243,8 +311,8 @@ class Vod {
   }
 
   // Credentials are only ever resolved server-side.
-  movieUrl(m) { const s = this.cfg.get().source; return `${this.sources._base()}/movie/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${m.id}.${m.ext}`; }
+  movieUrl(m) { return this.sources.vodUrl(m.id, m.ext); }
   episodeUrl(e) { const s = this.cfg.get().source; return `${this.sources._base()}/series/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${e.id}.${e.ext}`; }
 }
 
-module.exports = { Vod, BoxOffice, cleanTitle };
+module.exports = { Vod, BoxOffice, cleanTitle, parseVodName, findMatch, norm };

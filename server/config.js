@@ -8,7 +8,7 @@ const DEFAULTS = {
   source: { type: 'xtream', server: '', username: '', password: '', m3uUrl: '' },
   recordDir: path.join(os.homedir(), 'Videos', 'LuxxeTV'),
   downloadDir: path.join(os.homedir(), 'Videos', 'LuxxeTV Downloads'),
-  tmdbKey: '',               // optional TMDB API key (v3 key or v4 token): enables box-office sorting for movies
+  tmdbKey: '',               // themoviedb.org API key (v3) or read access token (v4): release lists + box-office sorting
   tmdbBase: '',              // blank = https://api.themoviedb.org/3 (override for testing)
   recordQuality: 'balanced', // small | balanced | high | copy
   liveQuality: '720p',       // 480p | 720p | 1080p | copy
@@ -25,6 +25,9 @@ const DEFAULTS = {
   hiddenCategories: [],
   favorites: [],
   epgUrl: '',                // optional XMLTV override; blank = auto
+  tmdbRegion: 'US',          // country used for theatrical / streaming release dates
+  movieDir: '',              // watchlist downloads; blank = <downloadDir>/Movies
+  movieCheckHours: 3,        // how often to look for watched movies on the provider
   userAgent: 'VLC/3.0.20 LibVLC/3.0.20',
   sessionSecret: '',
 };

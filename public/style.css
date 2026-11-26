@@ -334,3 +334,25 @@ h2.sub{font:600 1.1rem/1.2 var(--f-body);margin:18px 0 8px}
 .ep{display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--line)}
 .ep span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem}
 .ep button,.season .sh button{min-height:36px;padding:4px 12px;font-size:.85rem}
+
+/* ===== Movies: section chips, release-date cards, watchlist ===== */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+.chips button{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:8px 16px}
+.chips button.on{background:var(--line);border-color:var(--sel)}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:10px 0}
+.mv{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.mv.watched{border-color:var(--accent)}
+.mv .poster{aspect-ratio:2/3;background:#0005 center/cover no-repeat;position:relative;cursor:pointer}
+.mv .poster .noimg{position:absolute;inset:0;display:grid;place-items:center;padding:10px;text-align:center;color:var(--ink2)}
+.mv .ov{position:absolute;inset:0;background:#000d;padding:10px;font-size:13px;overflow:auto;display:none}
+.mv.open .ov{display:block}
+.mv .badge{position:absolute;left:6px;top:6px;background:#15803d;color:#fff;font-size:12px;padding:3px 8px;border-radius:10px}
+.mv .body{padding:8px 10px 10px;display:flex;flex-direction:column;gap:4px;flex:1}
+.mv .ttl{font-weight:600;line-height:1.25}
+.mv .dt{font-size:13px;color:var(--ink2)}.mv .dt b{color:var(--ink);font-weight:500}
+.mv .est{color:#f5b942}
+.mv button{margin-top:auto;padding:8px 10px;min-height:40px;font-size:14px}
+.mv button.on{background:var(--schedbg);box-shadow:inset 0 0 0 1px var(--accent)}
+.witem img{width:54px;height:81px;object-fit:cover;border-radius:6px;background:#0005;flex:none}
+.tmdbnote{margin-top:18px;font-size:12px}
+#mvMsg{margin-bottom:10px}

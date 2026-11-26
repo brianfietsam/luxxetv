@@ -130,6 +130,12 @@ class Sources {
     return `${this._base()}/live/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${ch.id}.ts`;
   }
 
+  // ---- VOD (movies) ----
+  vodUrl(streamId, ext) {
+    const s = this.cfg.get().source;
+    return `${this._base()}/movie/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${encodeURIComponent(streamId)}.${ext}`;
+  }
+
   async epg(id) {
     const s = this.cfg.get().source;
     if (s.type !== 'xtream') return [];
