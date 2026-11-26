@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { startMock, FILE_SIZE, fileByte } = require('./mock-xtream');
 const { parseVodName, findMatch } = require('../server/vod');
+const { parseProbe, plan } = require('../server/shrink');
 process.env.LUXXETV_TMDB_BASE = 'http://127.0.0.1:9099/tmdb/3';
 const { start } = require('../server');
 const { findFfmpeg } = require('../server/ffmpeg');
@@ -18,8 +19,8 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   if (!ff) throw new Error('ffmpeg not found');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ltv-e2e-'));
   const mock = await startMock(9099, ff.path);
-  const app = await start({ dataDir: path.join(tmp, 'data'), port: 0 });
-  const base = `http://127.0.0.1:${app.port}`;
+  let app = await start({ dataDir: path.join(tmp, 'data'), port: 0 });
+  let base = `http://127.0.0.1:${app.port}`;
   const j = async (u, o) => (await fetch(base + u, o)).json();
   const post = (u, body, method = 'POST') => j(u, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -140,6 +141,77 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   const hs = await fetch(`${base}/vodplay/e-601/${hseg}`);
   ok(hs.status === 200 && (await hs.arrayBuffer()).byteLength > 1000, 'converted VOD segment served');
 
+  // movie info panel: TMDB first, the provider's own data otherwise
+  const i1 = await j('/api/vod/movie/100');
+  ok(i1.plot === 'A very big film.' && i1.director === 'Dee Rector' && i1.cast === 'Star One' && i1.runtime === 136 && /abc123XYZ00$/.test(i1.trailer), 'movie info from TMDB');
+  await post('/api/settings', { clearTmdbKey: true }, 'PUT');
+  const i2 = await j('/api/vod/movie/100');
+  ok(i2.plot === 'The provider plot.' && i2.cast === 'Provider Cast' && i2.runtime === 90, 'movie info from the provider without a TMDB key');
+  ok(!JSON.stringify(i2).includes('/u/p/'), 'no credentials leak in movie info');
+
+  // ---- the download queue survives closing the app ----
+  const gem = path.join(dlDir, 'Movies', 'Unknown Gem.mp4');
+  mock.hold = true;
+  await post('/api/downloads', { type: 'movie', id: '102' });
+  for (let i = 0; i < 40 && !(fs.existsSync(gem + '.part') && fs.statSync(gem + '.part').size > 0); i++) await sleep(100);
+  await app.shutdown();
+  mock.hold = false; mock.ranges.length = 0;
+  ok(fs.existsSync(gem + '.part'), 'closing the app keeps the partial download');
+  app = await start({ dataDir: path.join(tmp, 'data'), port: 0 });
+  base = `http://127.0.0.1:${app.port}`;
+  d = await waitDl(1);
+  ok(d.jobs.some((x) => x.rel.endsWith('Unknown Gem.mp4') && x.status === 'done') && d.jobs.length >= 5, 'queue and history restored after restart');
+  ok(mock.ranges.includes('bytes=100000-') && fs.readFileSync(gem).equals(Buffer.alloc(300000, 7)), 'interrupted download resumed where it stopped');
+
+  // a partial file nothing owns (e.g. left by an older version) can be resumed or deleted
+  fs.unlinkSync(gem);
+  fs.writeFileSync(gem + '.part', Buffer.alloc(5000, 7));
+  fs.writeFileSync(path.join(dlDir, 'Movies', 'Gone.mkv.part'), 'x');
+  d = await j('/api/downloads');
+  ok(d.partials.length === 2 && d.partials.every((p) => p.resumable), 'unfinished downloads are listed');
+  await post('/api/downloads/partial/resume', { f: 'Movies/Unknown Gem.mp4.part' });
+  d = await waitDl(1);
+  ok(fs.existsSync(gem) && fs.statSync(gem).size === 300000 && mock.ranges.includes('bytes=5000-'), 'unfinished download resumed');
+  ok(/Could not find/.test((await post('/api/downloads/partial/resume', { f: 'Movies/Gone.mkv.part' })).error), 'unknown partial reported clearly');
+  await j('/api/downloads/partial?f=' + encodeURIComponent('Movies/Gone.mkv.part'), { method: 'DELETE' });
+  ok((await j('/api/downloads')).partials.length === 0, 'unfinished download deleted');
+
+  // ---- shrinking large downloads ----
+  const info = parseProbe(['  Duration: 02:00:00.50, start: 0.000000, bitrate: 55000 kb/s',
+    '  Stream #0:0(eng): Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3840x2160',
+    '  Stream #0:1(eng): Audio: truehd, 48000 Hz, 7.1, s32 (24 bit)', '  Stream #0:2(eng): Subtitle: subrip',
+    '  Stream #0:3(eng): Subtitle: hdmv_pgs_subtitle', '  Stream #0:4: Video: mjpeg, yuvj420p (attached pic)'].join('\n'));
+  ok(info.video === 0 && info.hdr && info.audio[0].channels === 8 && info.subs.join() === '2', 'reads video, HDR, surround audio and text subtitles');
+  const bits = plan(info, 5e9);
+  const planned = (bits.videoK + bits.audio.reduce((n, a) => n + a.kbps, 0)) * 1000 * info.duration / 8;
+  ok(planned > 4.5e9 && planned <= 5e9, `2 hour movie planned at ${(planned / 1e9).toFixed(2)} GB`);
+
+  await post('/api/settings', { shrinkGB: 0.0001 }, 'PUT');
+  fs.unlinkSync(gem);
+  await post('/api/downloads', { type: 'movie', id: '102' });
+  const waitIdle = async () => { let x; for (let i = 0; i < 240; i++) { x = await j('/api/downloads'); if (x.jobs.every((y) => y.status === 'done' || y.status === 'failed' || y.status === 'cancelled')) break; await sleep(250); } return x; };
+  d = await waitIdle();
+  ok(/original kept/.test(d.jobs[0].note) && fs.statSync(gem).size === 300000, 'a file that cannot be re-encoded is kept as it was');
+
+  await post('/api/settings', { shrinkGB: 0.001 }, 'PUT');
+  const big = path.join(dlDir, 'Movies', 'Shrink Me.mkv');
+  const srt = path.join(tmp, 'a.srt');
+  fs.writeFileSync(srt, '1\n00:00:01,000 --> 00:00:03,000\nhello\n');
+  const made = spawnSync(ff.path, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=10', '-f', 'lavfi', '-i', 'sine=duration=10', '-i', srt,
+    '-map', '0', '-map', '1', '-map', '2', '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '4M', '-minrate', '4M', '-maxrate', '4M', '-bufsize', '1M', '-x264-params', 'nal-hrd=cbr', '-c:a', 'ac3', '-ac', '6', '-c:s', 'srt', '-y', big]);
+  const before = made.status === 0 ? fs.statSync(big).size : 0;
+  ok(before > 2e6, `test movie created (${(before / 1e6).toFixed(1)} MB)`);
+  ok((await j('/api/downloads')).files.find((f) => f.name === 'Shrink Me.mkv').shrinkable, 'large file offered for shrinking');
+  await post('/api/downloads/shrink', { f: 'Movies/Shrink Me.mkv' });
+  d = await waitIdle();
+  const small = big.replace(/mkv$/, 'mp4');
+  const after = fs.existsSync(small) ? fs.statSync(small).size : 0;
+  ok(after > 2e5 && after < 1.35e6 && !fs.existsSync(big), `shrunk to ${(after / 1e6).toFixed(2)} MB for a 1 MB target: ${d.jobs[0].note}`);
+  const sp = spawnSync(ff.path, ['-hide_banner', '-i', small], { encoding: 'utf8' }).stderr;
+  ok(/Video: h264/.test(sp) && /Audio: aac.*stereo/.test(sp) && /Subtitle: mov_text/.test(sp), 'shrunk file is H.264/AAC with its subtitles');
+  ok(!fs.readdirSync(path.join(dlDir, 'Movies')).some((n) => n.endsWith('.part')), 'no temporary files left');
+  await post('/api/settings', { shrinkGB: 0 }, 'PUT');
+
   // ---- movies: TMDB lists, streaming dates, watchlist auto-download ----
   const DAY = 86400000;
   await post('/api/settings', { clearTmdbKey: true, tmdbBase: '' }, 'PUT');
@@ -165,6 +237,8 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   ok(sm.items.length === 2 && sm.items[0].id === 503 && sm.items[0].digital < Date.now() && sm.items[1].id === 502, 'streaming soon: recent + upcoming digital releases, by streaming date');
   ok(sm.items[0] && /^EN - Streamer \(\d{4}\)$/.test(sm.items[0].onProvider), 'already-on-provider badge picks the 1080p copy over 4K and wrong-year decoy');
   ok((await j('/api/movies/search?q=future')).items.some((m) => m.id === 501), 'search any movie');
+  const ri = await j('/api/movies/info/503');
+  ok(ri.runtime === 136 && ri.director === 'Dee Rector' && ri.provider && ri.provider.id === '901' && ri.digital < Date.now(), 'release info: details, dates and the provider copy');
 
   const waitStatus = async (id, want, secs = 30) => {
     let w;

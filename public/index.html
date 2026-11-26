@@ -2,7 +2,7 @@
 <html lang="en" data-theme="auto" data-accent="teal">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <title>LuxxeTV</title>
 <link rel="stylesheet" href="style.css">
@@ -99,7 +99,12 @@
   <section id="view-downloads" class="view page" hidden>
     <h1 class="display">downloads</h1>
     <div class="row"><button type="button" id="dlClear">clear finished</button></div>
+    <p id="dlSpace" class="muted"></p>
     <div id="dlJobs"></div>
+    <div id="dlPartialBox" hidden>
+      <h2 class="sub">unfinished downloads</h2>
+      <div id="dlPartials"></div>
+    </div>
     <h2 class="sub">saved files</h2>
     <div id="dlFiles"></div>
   </section>
@@ -194,6 +199,10 @@
       <label>Download folder
         <span class="row"><input id="sDlDir"><button type="button" id="browseDl" hidden>browse…</button></span>
       </label>
+      <label>Downloaded file size
+        <select id="sShrink"><option value="0">Keep original size</option><option value="5">Shrink to about 5 GB</option></select>
+      </label>
+      <p class="muted">Original movies are often 10–40 GB. Shrinking re-encodes each large download to a 1080p MP4 after it arrives, using the Encoder chosen below (a GPU encoder is much faster). The drive needs room for the original while this runs.</p>
       <label>TMDB API key, optional (release dates, watchlist and box-office sorting) <input id="sTmdb" type="password" autocomplete="new-password" placeholder="(not set)"></label>
       <label class="chk"><input id="sClearTmdb" type="checkbox"><span>Remove TMDB key</span></label>
       <p class="muted">Release dates and box office come from TMDB. Free key: themoviedb.org, Settings, API.</p>
@@ -247,8 +256,16 @@
 <div id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="shTitle">
   <div class="sh-in">
     <div class="sh-top"><h2 id="shTitle"></h2><button type="button" id="shClose" aria-label="Close">✕</button></div>
-    <p id="shMeta" class="muted"></p>
+    <div class="sh-hero">
+      <img id="shPoster" alt="" referrerpolicy="no-referrer" hidden>
+      <div>
+        <p id="shTagline"></p>
+        <p id="shMeta" class="muted"></p>
+        <div id="shActions"></div>
+      </div>
+    </div>
     <p id="shPlot"></p>
+    <dl id="shFacts"></dl>
     <div id="shBody"></div>
   </div>
 </div>

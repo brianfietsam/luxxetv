@@ -38,8 +38,11 @@ async function start({ dataDir, port }) {
   const scheduler = new Scheduler({ cfg, dataDir, recorder, sources });
   const tmdb = new Tmdb({ cfg, dataDir });
   const vod = new Vod({ cfg, sources, tmdb, dataDir });
-  const downloads = new Downloads({ cfg, vod });
+  const downloads = new Downloads({ cfg, vod, dataDir, getFfmpeg });
   const watchlist = new Watchlist({ cfg, dataDir, tmdb, vod, sources });
+  watchlist.onDone = (file) => downloads.queueShrink(file);
+  watchlist.onRemove = (file) => downloads.forget(file);
+  downloads.onShrunk = (from, to) => watchlist.relocate(from, to);
   const desktopToken = crypto.randomBytes(16).toString('hex');
 
   const authToken = () => crypto.createHmac('sha256', cfg.get().sessionSecret).update('luxxetv-ok:' + cfg.get().webPassword).digest('hex');
@@ -184,6 +187,7 @@ async function start({ dataDir, port }) {
     res.json(await vod.query({ kind: kindOf(req), cat: req.query.cat, q: req.query.q, sort: req.query.sort,
       offset: +req.query.offset || 0, limit: Math.min(+req.query.limit || 60, 200) }));
   }));
+  app.get('/api/vod/movie/:id', wrap(async (req, res) => res.json(await vod.movieInfo(req.params.id))));
   app.get('/api/vod/series/:id', wrap(async (req, res) => res.json(await vod.series(req.params.id))));
 
   // ---- downloads ----
@@ -197,7 +201,23 @@ async function start({ dataDir, port }) {
     else return res.status(400).json({ error: 'Unknown download type' });
     res.json({ queued: jobs.length, jobs });
   }));
-  app.get('/api/downloads', (req, res) => res.json({ jobs: downloads.list(), files: downloads.files() }));
+  app.get('/api/downloads', (req, res) => res.json({
+    jobs: downloads.list(), files: downloads.files(), partials: downloads.partials(watchlist.partFiles()), free: downloads.freeSpace(),
+    watch: watchlist.list().filter((w) => ['queued', 'downloading', 'failed'].includes(w.status)),   // shown in the same queue
+  }));
+  app.post('/api/downloads/shrink', wrap(async (req, res) => {
+    const f = downloads.resolve(req.body.f);
+    if (!f || f.endsWith('.part')) return res.status(404).json({ error: 'not found' });
+    const job = downloads.queueShrink(f, downloads.targetBytes() || 5e9);
+    if (!job) return res.status(400).json({ error: 'This file is already small enough' });
+    res.json(job);
+  }));
+  app.post('/api/downloads/partial/resume', wrap(async (req, res) => res.json(await downloads.resumePartial(req.body.f))));
+  app.delete('/api/downloads/partial', (req, res) => {
+    const part = downloads.partials(watchlist.partFiles()).find((p) => p.rel === req.query.f);   // never one still in use
+    res.json({ ok: !!part && downloads.remove(part.rel) });
+  });
+  app.post('/api/downloads/:id/retry', (req, res) => res.json({ ok: downloads.retry(req.params.id) }));
   app.post('/api/downloads/clear', (req, res) => { downloads.clearFinished(); res.json({ ok: true }); });
   app.post('/api/downloads/:id/cancel', (req, res) => res.json({ ok: downloads.cancel(req.params.id) }));
   app.delete('/api/downloads/file', (req, res) => res.json({ ok: downloads.remove(req.query.f) }));
@@ -223,6 +243,15 @@ async function start({ dataDir, port }) {
       return { ...m, onProvider: v ? v.name : null, watch: w ? w.status : null };
     });
   };
+  app.get('/api/movies/info/:id', wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!(id > 0)) return res.status(400).json({ error: 'Invalid movie id' });
+    const m = await tmdb.details(id);
+    const lib = await vod.library().catch(() => null);
+    const v = lib && findMatch(m, lib.items);
+    const w = watchlist.get(m.id);
+    res.json({ ...m, onProvider: v ? v.name : null, provider: v ? { id: v.streamId, ext: v.ext } : null, watch: w ? w.status : null });
+  }));
   app.get('/api/movies', wrap(async (req, res) => {
     const kind = ['theaters', 'upcoming', 'streaming'].includes(req.query.list) ? req.query.list : 'upcoming';
     if (!tmdb.configured()) return res.json({ needsKey: true, items: [] });
@@ -322,6 +351,7 @@ async function start({ dataDir, port }) {
     if (p.movieCheckHours !== undefined) p.movieCheckHours = Math.min(48, Math.max(0.25, +p.movieCheckHours || 3));
     delete p.webPasswordSet; delete p.tmdbKeySet;
     if (p.source) delete p.source.passwordSet;
+    if (p.shrinkGB !== undefined) p.shrinkGB = Math.min(100, Math.max(0, +p.shrinkGB || 0));
     if (p.clearTmdbKey) p.tmdbKey = '';
     delete p.clearTmdbKey;
     cfg.update(p);
@@ -348,7 +378,7 @@ async function start({ dataDir, port }) {
   return {
     port: server.address().port, desktopToken, cfg, recorder,
     async shutdown() {
-      scheduler.shutdown(); live.shutdown(); downloads.cancelAll(); watchlist.shutdown();
+      scheduler.shutdown(); live.shutdown(); downloads.shutdown(); watchlist.shutdown();
       await recorder.stopAll();
       server.close();
     },

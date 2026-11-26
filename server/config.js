@@ -8,6 +8,7 @@ const DEFAULTS = {
   source: { type: 'xtream', server: '', username: '', password: '', m3uUrl: '' },
   recordDir: path.join(os.homedir(), 'Videos', 'LuxxeTV'),
   downloadDir: path.join(os.homedir(), 'Videos', 'LuxxeTV Downloads'),
+  shrinkGB: 0,               // re-encode downloads larger than this many GB down to about that size (0 = keep original)
   tmdbKey: '',               // themoviedb.org API key (v3) or read access token (v4): release lists + box-office sorting
   tmdbBase: '',              // blank = https://api.themoviedb.org/3 (override for testing)
   recordQuality: 'balanced', // small | balanced | high | copy

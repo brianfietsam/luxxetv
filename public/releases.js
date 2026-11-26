@@ -28,6 +28,7 @@ function dateLines(m) {
   return lines;
 }
 
+// A movie's watchlist button can be on screen twice (card and info panel): keep both in step.
 async function toggleWatch(m, btn) {
   btn.disabled = true;
   try {
@@ -39,31 +40,69 @@ async function toggleWatch(m, btn) {
       const w = await api('/api/watchlist', { method: 'POST', body: { tmdbId: m.id } });
       m.watch = w.status;
       // Give the immediate provider check a moment, then show its result.
-      setTimeout(async () => { const l = await api('/api/watchlist').catch(() => null); const x = l && l.items.find((i) => i.tmdbId === m.id); if (x) { m.watch = x.status; paintBtn(m, btn); } countWatch(l); }, 2500);
+      setTimeout(async () => { const l = await api('/api/watchlist').catch(() => null); const x = l && l.items.find((i) => i.tmdbId === m.id); if (x) { m.watch = x.status; paint(m); } countWatch(l); }, 2500);
     }
-    paintBtn(m, btn); countWatch();
+    paint(m); countWatch();
+    if (mvList === 'watchlist' && !mvSearch && releasesShown()) loadWatchlist();
   } catch (e) { alert(e.message); }
   finally { btn.disabled = false; }
 }
 function paintBtn(m, btn) {
   btn.classList.toggle('on', !!m.watch);
-  btn.closest('.mv').classList.toggle('watched', !!m.watch);
+  btn.closest('.mv')?.classList.toggle('watched', !!m.watch);
   btn.textContent = m.watch ? WSTAT[m.watch] : m.onProvider ? '⬇ Download now' : '＋ Download when available';
+}
+const paint = (m) => (m.buttons || []).forEach((b) => paintBtn(m, b));
+function watchButton(m) {
+  const btn = el('button', { type: 'button', className: 'wbtn' });
+  btn.onclick = (e) => { e.stopPropagation(); toggleWatch(m, btn); };
+  (m.buttons ||= new Set()).add(btn);
+  return btn;
+}
+
+// Make any element open a movie's info panel, by tap, click or Enter.
+function opens(node, m) {
+  Object.assign(node, { tabIndex: 0, onclick: () => openRelease(m), onkeydown: (e) => { if (e.key === 'Enter' && e.target === node) openRelease(m); } });
+  node.setAttribute('role', 'button');
+  node.setAttribute('aria-label', 'Info about ' + m.title);
+  return node;
+}
+
+async function openRelease(m) {
+  const btn = watchButton(m);
+  const dates = () => [m.theatrical ? `Theaters ${fmtDay(m.theatrical)}` : '',
+    m.digital ? `Streaming ${fmtDay(m.digital)}` : m.digitalEstimate ? `Streaming est. ~${fmtDay(m.digitalEstimate)}` : 'Streaming not announced'].filter(Boolean).join(' · ');
+  const current = showSheet(`${m.title}${m.year ? ` (${m.year})` : ''}`, { poster: m.poster, meta: [dates()], plot: m.overview || 'loading movie info…', actions: [btn] });
+  paintBtn(m, btn);
+  let x;
+  try { x = await api('/api/movies/info/' + m.id); }
+  catch (e) { if (current() && !m.overview) $('#shPlot').textContent = 'Movie info is unavailable: ' + e.message; return; }
+  if (!current()) return;
+  Object.assign(m, { theatrical: x.theatrical, digital: x.digital, digitalEstimate: x.digitalEstimate, onProvider: x.onProvider, watch: x.watch });
+  if (x.poster) sheetPoster(x.poster);
+  $('#shTagline').textContent = x.tagline;
+  $('#shMeta').textContent = [x.certification, runtime(x.runtime), x.rating ? '★ ' + x.rating.toFixed(1) : ''].filter(Boolean).join(' · ');
+  $('#shPlot').textContent = x.overview || 'No description available.';
+  sheetFacts([['Genre', x.genres], ['Director', x.director], ['Cast', x.cast],
+    ['Theaters', x.theatrical ? `${fmtDay(x.theatrical)} · ${daysAway(x.theatrical)}` : ''],
+    ['Streaming', x.digital ? `${fmtDay(x.digital)} · ${daysAway(x.digital)}` : x.digitalEstimate ? `not announced · est. ~${fmtDay(x.digitalEstimate)}` : 'not announced'],
+    ['On your provider', x.onProvider || 'not yet'], ['Trailer', trailerLink(x.trailer)]]);
+  if (x.provider) $('#shActions').prepend(el('button', { type: 'button', className: 'solid', textContent: '▶ watch now',
+    onclick: () => { sheetClose(); playVod('m-' + x.provider.id, x.provider.ext, x.title); } }));
+  paint(m);
 }
 
 function movieCard(m) {
-  const poster = el('div', { className: 'poster', onclick: () => card.classList.toggle('open') },
-    m.poster ? '' : el('div', { className: 'noimg', textContent: m.title }),
-    el('div', { className: 'ov', textContent: m.overview || 'No description.' }));
+  const poster = el('div', { className: 'poster' }, m.poster ? '' : el('div', { className: 'noimg', textContent: m.title }));
   if (m.poster) poster.style.backgroundImage = `url("${m.poster.replace(/["\\\n]/g, "")}")`;
   if (m.onProvider) poster.append(el('span', { className: 'badge', title: m.onProvider, textContent: '✔ On your provider' }));
-  const btn = el('button', { type: 'button' });
-  btn.onclick = () => toggleWatch(m, btn);
-  const card = el('div', { className: 'mv' }, poster,
+  m.buttons = new Set();
+  const btn = watchButton(m);
+  const card = el('div', { className: 'mv' }, opens(el('div', { className: 'hit' }, poster,
     el('div', { className: 'body' },
       el('div', { className: 'ttl', textContent: `${m.title}${m.year ? ` (${m.year})` : ''}` }),
       m.certification || m.rating ? el('div', { className: 'dt', textContent: [m.certification, m.rating ? `★ ${m.rating.toFixed(1)}` : ''].filter(Boolean).join(' · ') }) : '',
-      ...dateLines(m), btn));
+      ...dateLines(m))), m), btn);
   paintBtn(m, btn);
   return card;
 }
@@ -129,14 +168,15 @@ async function loadWatchlist() {
       if (w.status !== 'done' && !confirm(`Remove “${w.title}” from your watchlist?`)) return;
       await api(`/api/watchlist/${w.tmdbId}${del ? '?deleteFile=1' : ''}`, { method: 'DELETE' }); loadWatchlist();
     } }));
+    const movie = { ...w, id: w.tmdbId, watch: w.status, onProvider: w.providerName };
     return el('div', { className: 'item witem' + (w.status === 'downloading' ? ' live' : '') },
-      el('img', { src: w.poster || '', loading: 'lazy', onerror() { this.style.visibility = 'hidden'; } }),
-      el('div', { className: 't' }, el('b', { textContent: `${w.title}${w.year ? ` (${w.year})` : ''}` }),
+      opens(el('img', { src: w.poster || '', alt: '', loading: 'lazy', onerror() { this.style.visibility = 'hidden'; } }), movie),
+      opens(el('div', { className: 't' }, el('b', { textContent: `${w.title}${w.year ? ` (${w.year})` : ''}` }),
         el('div', { className: 'muted', textContent: info.join(' · ') }),
         el('div', { className: w.status === 'failed' ? 'err' : 'muted', textContent: line }),
         w.providerName && w.status !== 'done' ? el('div', { className: 'muted', textContent: 'Provider: ' + w.providerName }) : '',
-        w.status === 'downloading' && w.total ? el('div', { className: 'bar-t' }, el('i', { style: `width:${(w.bytes / w.total * 100).toFixed(1)}%` })) : ''),
-      ...acts);
+        w.status === 'downloading' && w.total ? el('div', { className: 'bar-t' }, el('i', { style: `width:${(w.bytes / w.total * 100).toFixed(1)}%` })) : ''), movie),
+      el('div', { className: 'acts' }, ...acts));
   }));
   if (st.checking || r.items.some((i) => i.status === 'downloading' || i.status === 'queued')) mvPoll = setTimeout(() => releasesShown() && mvList === 'watchlist' && !mvSearch && loadWatchlist(), 3000);
 }
@@ -156,6 +196,7 @@ function openMovies() {
   const lib = mvTab === 'library';
   $('#mvLibrary').hidden = !lib; $('#mvReleases').hidden = lib;
   document.querySelectorAll('#mvLists button').forEach((b) => b.classList.toggle('on', b.dataset.list === mvTab && (lib || !mvSearch)));
+  $('#mvLists button.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   clearTimeout(mvPoll);
   countWatch();
   if (lib) return openLib('movies');

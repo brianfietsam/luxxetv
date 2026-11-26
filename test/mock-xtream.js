@@ -32,6 +32,10 @@ function tmdbMovies() {
   ].map((m) => ({ ...m, release_date: ymd(m.theatrical), year: new Date(m.theatrical).getUTCFullYear() }));
 }
 
+// What TMDB adds for a movie's info panel (with append_to_response=credits,videos).
+const DETAILS = { runtime: 136, genres: [{ name: 'Action' }], credits: { cast: [{ name: 'Star One' }], crew: [{ job: 'Director', name: 'Dee Rector' }] },
+  videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123XYZ00' }] } };
+
 function tmdb(u, req, res) {
   const key = u.searchParams.get('api_key') || (req.headers.authorization || '').replace(/^Bearer /, '');
   res.setHeader('Content-Type', 'application/json');
@@ -61,7 +65,7 @@ function tmdb(u, req, res) {
   if (m) {
     const mv = all.find((x) => x.id === +m[1]);
     if (!mv) { res.statusCode = 404; return res.end('{}'); }
-    return res.end(JSON.stringify(brief(mv)));
+    return res.end(JSON.stringify({ ...brief(mv), ...DETAILS }));
   }
   res.statusCode = 404; res.end('{}');
 }
@@ -80,7 +84,7 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
   // Provider movie library; tests swap or push entries to simulate movies arriving.
   const vod = rich ? [...library, ...releases] : [...library];
   const drops = new Set([903]);   // first download of these is cut off mid-way to exercise resume
-  const hits = [];
+  const hits = [], ranges = [];
   const srv = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     if (u.pathname.startsWith('/tmdb/3/')) return tmdb(u, req, res);
@@ -114,6 +118,7 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
       if (a === 'get_short_epg') return res.end(JSON.stringify({ epg_listings: [{ title: Buffer.from('Test Show').toString('base64'), description: Buffer.from('Fake EPG').toString('base64'), start_timestamp: String(Date.now() / 1000 - 600 | 0), stop_timestamp: String(Date.now() / 1000 + 1200 | 0) }] }));
       if (a === 'get_vod_categories') return res.end(JSON.stringify([{ category_id: '10', category_name: 'Action' }, { category_id: '11', category_name: 'Drama' }]));
       if (a === 'get_vod_streams') return res.end(JSON.stringify(vod));
+      if (a === 'get_vod_info') return res.end(JSON.stringify({ info: { plot: 'The provider plot.', cast: 'Provider Cast', genre: 'Drama', duration_secs: 5400, movie_image: '' } }));
       if (a === 'get_series_categories') return res.end(JSON.stringify([{ category_id: '20', category_name: 'Sci-Fi' }]));
       if (a === 'get_series') return res.end(JSON.stringify([{ series_id: 7, name: 'Space Show (2021)', category_id: '20', cover: '', rating_5based: 4, last_modified: '1700000000' }]));
       if (a === 'get_series_info') return res.end(JSON.stringify({ info: { name: 'Space Show', plot: 'Space.' }, episodes: {
@@ -129,12 +134,14 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
         return;
       }
       const body = Buffer.alloc(300000, 7);            // 300 KB fake video; honours Range so resume works
+      if (srv.hold) { res.writeHead(200, { 'Content-Length': body.length }); return void res.write(body.subarray(0, 100000)); }   // stall half way
+      ranges.push(req.headers.range || null);
       const m = /bytes=(\d+)-/.exec(req.headers.range || '');
       if (m) { res.writeHead(206, { 'Content-Length': body.length - +m[1], 'Content-Range': `bytes ${m[1]}-${body.length - 1}/${body.length}` }); return res.end(body.subarray(+m[1])); }
       res.writeHead(200, { 'Content-Length': body.length, 'Content-Type': 'video/mp4' });
       return res.end(body);
     }
-    if (u.pathname === '/tmdb/movie/603') return res.end(JSON.stringify({ revenue: 463000000 }));
+    if (u.pathname === '/tmdb/movie/603') return res.end(JSON.stringify({ id: 603, title: 'Big Blockbuster', overview: 'A very big film.', revenue: 463000000, ...DETAILS }));
     if (u.pathname === '/tmdb/movie/604') return res.end(JSON.stringify({ revenue: 12000000 }));
     if (u.pathname === '/tmdb/search/movie') return res.end(JSON.stringify({ results: [{ id: 604 }] }));
     if (u.pathname.startsWith('/tmdb/')) { res.statusCode = 404; return res.end('{}'); }
@@ -179,7 +186,7 @@ function startMock(port = 9099, ffmpeg = 'ffmpeg', { rich = false } = {}) {
     }
     res.statusCode = 404; res.end();
   });
-  srv.vod = vod; srv.releases = releases; srv.hits = hits;
+  srv.vod = vod; srv.releases = releases; srv.hits = hits; srv.ranges = ranges;
   return new Promise((r) => srv.listen(port, '127.0.0.1', () => r(srv)));
 }
 

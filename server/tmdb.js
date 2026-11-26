@@ -166,6 +166,24 @@ class Tmdb {
     return this._shape(m, d);
   }
 
+  // Everything shown on a movie's info panel.
+  async details(id) {
+    const m = await this._get(`/movie/${encodeURIComponent(id)}`, { append_to_response: 'credits,videos' });
+    let d = null; try { d = await this.releaseDates(m.id); } catch { /* optional */ }
+    const credits = m.credits || {};
+    const videos = ((m.videos && m.videos.results) || []).filter((v) => v.site === 'YouTube' && /^[\w-]{6,20}$/.test(v.key));
+    const trailer = videos.find((v) => v.type === 'Trailer') || videos[0];
+    return {
+      ...this._shape(m, d),
+      tagline: m.tagline || '',
+      runtime: m.runtime || 0,
+      genres: (m.genres || []).map((g) => g.name).join(', '),
+      director: (credits.crew || []).filter((c) => c.job === 'Director').map((c) => c.name).join(', '),
+      cast: (credits.cast || []).slice(0, 8).map((c) => c.name).join(', '),
+      trailer: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : '',
+    };
+  }
+
   invalidate() { this.lists.clear(); }
 }
 
