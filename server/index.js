@@ -10,6 +10,10 @@ const { Live } = require('./live');
 const { Scheduler } = require('./scheduler');
 const { Epg } = require('./epg');
 const { findFfmpeg, listEncoders } = require('./ffmpeg');
+const { Tmdb } = require('./tmdb');
+const { Vod, findMatch } = require('./vod');
+const { Watchlist } = require('./watchlist');
+const { buildInfo } = require('./version');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const HLS_JS = path.join(require.resolve('hls.js/package.json'), '..', 'dist', 'hls.min.js');
@@ -30,6 +34,9 @@ async function start({ dataDir, port }) {
   const recorder = new Recorder({ cfg, sources, getFfmpeg });
   const live = new Live({ cfg, sources, getFfmpeg });
   const scheduler = new Scheduler({ cfg, dataDir, recorder, sources });
+  const tmdb = new Tmdb({ cfg, dataDir });
+  const vod = new Vod({ sources });
+  const watchlist = new Watchlist({ cfg, dataDir, tmdb, vod, sources });
   const desktopToken = crypto.randomBytes(16).toString('hex');
 
   const authToken = () => crypto.createHmac('sha256', cfg.get().sessionSecret).update('luxxetv-ok:' + cfg.get().webPassword).digest('hex');
@@ -80,7 +87,7 @@ async function start({ dataDir, port }) {
   app.get('/vendor/hls.min.js', (req, res) => res.sendFile(HLS_JS));
 
   const guard = (req, res, next) => (authed(req) ? next() : res.status(401).json({ error: 'auth' }));
-  app.use(['/api', '/live', '/rec'], guard);
+  app.use(['/api', '/live', '/rec', '/dl'], guard);
 
   // ---- channels ----
   app.get('/api/categories', wrap(async (req, res) => {
@@ -101,7 +108,7 @@ async function start({ dataDir, port }) {
   }));
   app.get('/api/epg/:id', wrap(async (req, res) => res.json(await sources.epg(req.params.id))));
   app.post('/api/refresh', wrap(async (req, res) => {
-    sources.invalidate(); epg.invalidate();
+    sources.invalidate(); epg.invalidate(); vod.invalidate();
     const d = await sources.ensure(true);
     epg.ensureStarted(true);
     res.json({ channels: d.channels.length, categories: d.categories.length });
@@ -155,6 +162,38 @@ async function start({ dataDir, port }) {
   app.post('/api/schedules', wrap(async (req, res) => res.json(await scheduler.add(req.body))));
   app.delete('/api/schedules/:id', (req, res) => res.json({ ok: scheduler.remove(req.params.id) }));
 
+  // ---- movies: upcoming / in theaters / streaming, and the auto-download watchlist ----
+  const decorate = async (items) => {
+    const lib = vod.mem && Date.now() - vod.mem.at < 6 * 3600000 ? vod.mem : null;
+    if (!lib && cfg.get().source.type === 'xtream') vod.ensure().catch(() => {});   // warm in background
+    return items.map((m) => {
+      const w = watchlist.get(m.id);
+      const v = lib ? findMatch(m, lib.items) : null;
+      return { ...m, onProvider: v ? v.name : null, watch: w ? w.status : null };
+    });
+  };
+  app.get('/api/movies', wrap(async (req, res) => {
+    const kind = ['theaters', 'upcoming', 'streaming'].includes(req.query.list) ? req.query.list : 'upcoming';
+    if (!tmdb.configured()) return res.json({ needsKey: true, items: [] });
+    res.json({ items: await decorate(await tmdb.list(kind)), region: tmdb.region(), libraryLoaded: !!vod.mem });
+  }));
+  app.get('/api/movies/search', wrap(async (req, res) => {
+    if (!tmdb.configured()) return res.json({ needsKey: true, items: [] });
+    const q = String(req.query.q || '').trim();
+    res.json({ items: q ? await decorate(await tmdb.search(q)) : [] });
+  }));
+  app.get('/api/watchlist', (req, res) => res.json({ items: watchlist.list(), status: watchlist.status() }));
+  app.post('/api/watchlist', wrap(async (req, res) => res.json(await watchlist.add(req.body.tmdbId))));
+  app.delete('/api/watchlist/:id', (req, res) => res.json({ ok: watchlist.remove(req.params.id, { deleteFile: req.query.deleteFile === '1' }) }));
+  app.post('/api/watchlist/:id/retry', (req, res) => res.json({ ok: watchlist.retry(req.params.id) }));
+  app.post('/api/watchlist/check', wrap(async (req, res) => res.json(await watchlist.check())));
+  app.get('/dl/movie/:id', (req, res) => {
+    const f = watchlist.resolve(req.params.id);
+    if (!f) return res.status(404).end();
+    if (req.query.download) return res.download(f);
+    res.sendFile(f);
+  });
+
   // ---- live HLS for the web player ----
   app.get('/live/:id/index.m3u8', wrap(async (req, res) => {
     const s = await live.ensure(req.params.id);
@@ -177,6 +216,7 @@ async function start({ dataDir, port }) {
     delete c.sessionSecret;
     c.source.passwordSet = !!c.source.password; c.source.password = '';
     c.webPasswordSet = !!c.webPassword; c.webPassword = '';
+    c.tmdbKeySet = !!c.tmdbKey; c.tmdbKey = '';
     res.json(c);
   });
   app.put('/api/settings', wrap(async (req, res) => {
@@ -185,10 +225,14 @@ async function start({ dataDir, port }) {
     if (p.source && !p.source.password) delete p.source.password;      // blank = keep
     if (p.webPassword === '') delete p.webPassword;                    // blank = keep
     if (p.clearWebPassword) { p.webPassword = ''; delete p.clearWebPassword; }
-    delete p.webPasswordSet;
+    if (p.tmdbKey === '' || p.tmdbKey === undefined) delete p.tmdbKey;  // blank = keep
+    else p.tmdbKey = String(p.tmdbKey).trim();
+    if (p.tmdbRegion !== undefined) p.tmdbRegion = /^[A-Za-z]{2}$/.test(String(p.tmdbRegion).trim()) ? String(p.tmdbRegion).trim().toUpperCase() : 'US';
+    if (p.movieCheckHours !== undefined) p.movieCheckHours = Math.min(48, Math.max(0.25, +p.movieCheckHours || 3));
+    delete p.webPasswordSet; delete p.tmdbKeySet;
     if (p.source) delete p.source.passwordSet;
     cfg.update(p);
-    sources.invalidate(); epg.invalidate();
+    sources.invalidate(); epg.invalidate(); vod.invalidate(); tmdb.invalidate();
     ffmpeg = findFfmpeg(cfg.get().ffmpegPath);
     if (p.webPassword) setAuthCookie(res);   // keep the current browser logged in
     res.json({ ok: true, restartNeeded: p.port !== undefined || p.listenAll !== undefined });
@@ -197,6 +241,7 @@ async function start({ dataDir, port }) {
     ffmpeg: ffmpeg && ffmpeg.version, ffmpegPath: ffmpeg && ffmpeg.path,
     encoders: ffmpeg ? listEncoders(ffmpeg.path) : [],
     port: server.address().port,
+    ...buildInfo(),
   }));
 
   const listenPort = port !== undefined ? port : cfg.get().port;
@@ -210,7 +255,7 @@ async function start({ dataDir, port }) {
   return {
     port: server.address().port, desktopToken, cfg, recorder,
     async shutdown() {
-      scheduler.shutdown(); live.shutdown();
+      scheduler.shutdown(); live.shutdown(); watchlist.shutdown();
       await recorder.stopAll();
       server.close();
     },

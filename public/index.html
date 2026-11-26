@@ -12,6 +12,7 @@
   <nav id="tabs">
     <button data-tab="live" class="on">Live</button>
     <button data-tab="guide">Guide</button>
+    <button data-tab="movies">Movies</button>
     <button data-tab="recordings">Recordings</button>
     <button data-tab="schedule">Schedule</button>
     <button data-tab="settings">Settings</button>
@@ -77,6 +78,25 @@
     <button id="gMore" class="wide" hidden>Load more channels</button>
   </section>
 
+  <section id="tab-movies" class="tab" hidden>
+    <div class="filters">
+      <input id="mvq" type="search" placeholder="Search any movie to add to your watchlist…">
+    </div>
+    <div class="chips" id="mvLists">
+      <button type="button" data-list="upcoming" class="on">Coming to theaters</button>
+      <button type="button" data-list="theaters">In theaters</button>
+      <button type="button" data-list="streaming">Streaming soon</button>
+      <button type="button" data-list="watchlist">My watchlist <span id="wCount"></span></button>
+    </div>
+    <div id="wBar" class="item" hidden>
+      <div class="t"><b>Auto-download</b><div id="wInfo" class="muted"></div></div>
+      <button type="button" id="wCheck">Check provider now</button>
+    </div>
+    <div id="mvMsg" class="muted"></div>
+    <div id="movies"></div>
+    <p class="muted tmdbnote">Movie data and posters from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming dates marked “est.” are estimates (about 45 days after theaters) until the studio announces one.</p>
+  </section>
+
   <section id="tab-recordings" class="tab" hidden>
     <div id="active"></div>
     <div id="recList"></div>
@@ -127,6 +147,14 @@
         </div>
       </div>
 
+      <h3>Movies</h3>
+      <label>TMDB API key – free at themoviedb.org → Settings → API <input id="sTmdb" type="password" autocomplete="off" placeholder="(not set)"></label>
+      <label>Release-date country (2-letter code) <input id="sRegion" maxlength="2" placeholder="US"></label>
+      <label>Movie download folder (blank = Save folder\Movies)
+        <span class="row"><input id="sMovieDir"><button type="button" id="browseMovies" hidden>Browse…</button></span>
+      </label>
+      <label>Check provider for watched movies every (hours) <input id="sMovieHrs" type="number" min="0.25" max="48" step="0.25"></label>
+
       <h3>Recording</h3>
       <label>Save folder
         <span class="row"><input id="sDir"><button type="button" id="browse" hidden>Browse…</button></span>
@@ -159,6 +187,7 @@
       <p id="setMsg" class="muted"></p>
     </form>
     <div id="urls" class="card"></div>
+    <div id="about" class="card"></div>
   </section>
 </main>
 <script src="/vendor/hls.min.js"></script>
