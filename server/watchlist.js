@@ -26,6 +26,8 @@ class Watchlist {
     this.current = null;      // { item, abort }
     this.working = false;
     this.lastSave = 0;
+    this.onDone = null;       // (file) => void, once a movie is fully downloaded
+    this.onRemove = null;     // (file) => void, before a downloaded movie is deleted
     this.timer = setInterval(() => this._tick(), 60000);
     this.timer.unref();
     this.startTimer = setTimeout(() => this._tick(), 20000);
@@ -73,7 +75,7 @@ class Watchlist {
     this.items = this.items.filter((i) => i !== item);
     const p = item.file && path.join(this.movieDir(), item.file);
     try { if (p) fs.unlinkSync(p + PART); } catch { /* none */ }
-    if (deleteFile && p && item.status === 'done') { try { fs.unlinkSync(p); } catch { /* gone */ } }
+    if (deleteFile && p && item.status === 'done') { if (this.onRemove) this.onRemove(p); try { fs.unlinkSync(p); } catch { /* gone */ } }
     this.save();
     return true;
   }
@@ -162,6 +164,7 @@ class Watchlist {
         fs.renameSync(part, final);
         item.status = 'done'; item.doneAt = Date.now(); item.bytes = fs.statSync(final).size;
         this.save();
+        if (this.onDone) this.onDone(final);
         return;
       } catch (e) {
         lastErr = e;
@@ -249,6 +252,20 @@ class Watchlist {
     const hours = Math.max(0.25, +this.cfg.get().movieCheckHours || 3);
     return { checking: this.state.checking, lastCheck: this.state.lastCheck || 0, nextCheck: (this.state.lastCheck || Date.now()) + hours * 3600000,
       lastError: this.state.lastError, downloading: this.current ? this.pub(this.current.item) : null, movieDir: this.movieDir() };
+  }
+
+  // Partial files this list still owns.
+  partFiles() {
+    return new Set(this.items.filter((i) => i.file && i.status !== 'done').map((i) => path.resolve(this.movieDir(), i.file + PART)));
+  }
+
+  // A downloaded movie was re-encoded under a new name.
+  relocate(from, to) {
+    const item = this.items.find((i) => i.file && path.resolve(this.movieDir(), i.file) === path.resolve(from));
+    if (!item) return;
+    item.file = path.basename(to);
+    try { item.bytes = item.total = fs.statSync(to).size; } catch { /* keep old numbers */ }
+    this.save();
   }
 
   resolve(tmdbId) {

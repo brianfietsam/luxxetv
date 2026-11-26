@@ -356,3 +356,96 @@ h2.sub{font:600 1.1rem/1.2 var(--f-body);margin:18px 0 8px}
 .witem img{width:54px;height:81px;object-fit:cover;border-radius:6px;background:#0005;flex:none}
 .tmdbnote{margin-top:18px;font-size:12px}
 #mvMsg{margin-bottom:10px}
+
+/* ===== Movie info panel ===== */
+.sh-hero{display:flex;gap:14px;align-items:flex-start}
+.sh-hero>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+#shPoster{width:130px;aspect-ratio:2/3;object-fit:cover;border-radius:10px;background:var(--ground);flex:none}
+#shTagline,#shMeta{margin:0}
+#shTagline{font-style:italic;color:var(--ink2)}
+#shTagline:empty,#shPlot:empty,#shActions:empty,#shFacts:empty,#shBody:empty{display:none}
+#shActions{display:flex;gap:8px;flex-wrap:wrap}
+#shActions button.on{background:var(--schedbg);box-shadow:inset 0 0 0 1px var(--accent)}
+#shPlot{color:var(--ink);line-height:1.5}
+#shFacts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:0;font-size:.9rem}
+#shFacts dt{color:var(--ink2)}
+#shFacts dd{margin:0;overflow-wrap:anywhere}
+#shFacts a{color:var(--sel)}
+#sheet .sh-in>*{flex:none}
+.sh-top h2{min-width:0;overflow-wrap:anywhere}
+.mv .hit{display:flex;flex-direction:column;flex:1;cursor:pointer}
+.mv .wbtn{margin:0 10px 10px}
+.witem img,.witem .t{cursor:pointer}
+.witem .acts{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ===== Layout that holds up on any width ===== */
+.libtools select{width:auto;flex:0 1 auto}
+.item .t b,.item .t div{overflow-wrap:anywhere}
+#dlSpace{margin:8px 0}
+
+/* ===== Phones ===== */
+@supports (height:100dvh){body{height:100dvh}}
+#top{padding-top:max(10px,env(safe-area-inset-top))}
+@media (max-width:760px),(max-height:500px){
+  input[type=search],input[type=text],input[type=password],input[type=number],input[type=datetime-local],input:not([type]),select{font-size:16px}   /* smaller text makes iOS zoom in */
+  #top{flex-wrap:nowrap;gap:10px;padding-left:10px;padding-right:0;padding-bottom:6px}
+  #top .brand{font-size:18px;flex:none}
+  #pivot{flex-wrap:nowrap;overflow-x:auto;min-width:0;gap:2px;padding-right:10px}
+  #pivot button{flex:none;font-size:1rem;padding:8px 12px;min-height:44px}
+  #recbadge{order:3;margin-right:8px;padding:6px 10px}
+  #recText{display:none}
+  .display,#paneTitle{font-size:1.35rem}
+  .page{padding:4px 10px calc(40px + env(safe-area-inset-bottom))}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px}
+  .chips::-webkit-scrollbar{display:none}
+  .chips button{flex:none;min-height:44px;padding:6px 14px;font-size:.9375rem}
+  .libtools input{flex:1 1 100%}
+  .libtools select{flex:1 1 0;min-width:0}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+  .card .ct{padding:6px 8px 8px}.card .ct b{font-size:.8125rem}
+  .mgrid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px}
+  .item{gap:8px;padding:10px}
+  .item .t{flex:1 1 100%;min-width:0}
+  .item>button,.item>a.btn{flex:1 1 0;justify-content:center;padding-left:8px;padding-right:8px;min-height:44px}
+  .witem img{width:46px;height:69px}
+  .witem .t{flex:1 1 0}
+  .witem .acts{flex:1 1 100%}.witem .acts>*{flex:1;justify-content:center;text-align:center}
+  .panel{padding:12px}
+  #rail{padding-left:10px}
+  #pane{padding-left:10px}
+  .pane-head{padding:4px 10px 4px 0}
+  .tools{margin-top:4px;gap:6px}
+  .nav{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px}
+  .nav::-webkit-scrollbar{display:none}
+  .nav button,.nav select,.nav .chk{flex:none;white-space:nowrap;min-height:44px;padding:0 10px}
+  .stage-top h2{white-space:nowrap;text-overflow:ellipsis}
+  .stage-actions>*{flex:1 1 auto;text-align:center;justify-content:center}
+  #sheet .sh-in{max-height:92vh;padding:14px 14px calc(20px + env(safe-area-inset-bottom))}
+  @supports (height:100dvh){#sheet .sh-in{max-height:92dvh}}
+  #shPoster{width:104px}
+  #shActions{flex-direction:column}
+  .ep button,.season .sh button{min-height:44px;min-width:44px}
+  .next div:nth-child(n+3){display:none}
+}
+/* narrow phones: keep channel names readable */
+@media (max-width:760px){
+  :root{--ch:124px}
+  .chan{gap:0;padding-right:6px}
+  .chan .fav{width:36px}
+}
+/* phone held sideways: give the guide and the player the height */
+@media (max-height:500px) and (orientation:landscape){
+  :root{--row:64px}
+  #top{padding-top:4px;padding-bottom:4px}
+  #paneTitle{display:none}
+  #view-guide{flex-direction:row}
+  #rail{width:150px;padding:4px 0 4px 8px}
+  #catFind{display:none}
+  #cats{flex-direction:column;overflow-x:hidden;overflow-y:auto;padding:0}
+  .cat{width:100%;white-space:normal;min-height:40px;font-size:.875rem}
+  .tools{flex-wrap:nowrap}.tools #gq{flex:0 1 170px}.nav{flex:1 1 0;min-width:0}
+  .stage-info{display:none}
+  #stage{padding-top:4px;padding-bottom:4px}
+  .stage-top .back,.stage-actions button,.stage-actions a.btn,.stage-actions select{min-height:40px;height:40px}
+  .stage-actions{flex-wrap:nowrap;overflow-x:auto;margin-top:4px}
+}

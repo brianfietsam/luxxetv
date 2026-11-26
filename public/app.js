@@ -63,6 +63,7 @@ function setView(v) {
   view = v;
   document.querySelectorAll('#pivot button').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   document.querySelectorAll('.view').forEach((s) => { s.hidden = s.id !== 'view-' + v; });
+  $('#pivot button.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });   // the phone header scrolls sideways
   if (v === 'guide' && dirtyGuide) { dirtyGuide = false; loadGuide(true); }
   if (v === 'movies') openMovies();
   if (v === 'shows') openLib(v);
@@ -566,6 +567,8 @@ async function loadSettings() {
   $('#sDlDir').value = c.downloadDir; $('#sTmdb').placeholder = c.tmdbKeySet ? '(saved, leave blank to keep)' : '(not set)';
   $('#sTmdb').value = ''; $('#sClearTmdb').checked = false;
   $('#sRegion').value = c.tmdbRegion || 'US'; $('#sMovieDir').value = c.movieDir || ''; $('#sMovieHrs').value = c.movieCheckHours;
+  $('#sShrink').value = String(c.shrinkGB || 0);
+  if (!$('#sShrink').value) { $('#sShrink').append(el('option', { value: c.shrinkGB, textContent: `Shrink to about ${c.shrinkGB} GB` })); $('#sShrink').value = String(c.shrinkGB); }
   $('#sDir').value = c.recordDir; $('#sRecQ').value = c.recordQuality; $('#sLiveQ').value = c.liveQuality;
   $('#sPadB').value = c.padBeforeMin; $('#sPadA').value = c.padAfterMin;
   $('#sWebPw').placeholder = c.webPasswordSet ? '(saved, leave blank to keep)' : 'none (LAN only)';
@@ -595,6 +598,7 @@ async function saveSettings(quiet) {
   const body = {
     source: { type: $('#sType').value, server: $('#sServer').value.trim(), username: $('#sUser').value.trim(), password: $('#sPass').value, m3uUrl: $('#sM3u').value.trim() },
     downloadDir: $('#sDlDir').value.trim(), tmdbKey: $('#sTmdb').value.trim(), clearTmdbKey: $('#sClearTmdb').checked,
+    shrinkGB: +$('#sShrink').value,
     tmdbRegion: ($('#sRegion').value.trim() || 'US').toUpperCase(), movieDir: $('#sMovieDir').value.trim(), movieCheckHours: +$('#sMovieHrs').value || 3,
     recordDir: $('#sDir').value.trim(), recordQuality: $('#sRecQ').value, liveQuality: $('#sLiveQ').value,
     padBeforeMin: +$('#sPadB').value || 0, padAfterMin: +$('#sPadA').value || 0,

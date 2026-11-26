@@ -148,7 +148,7 @@ class BoxOffice {
 
 class Vod {
   constructor({ cfg, sources, tmdb, dataDir }) {
-    this.cfg = cfg; this.sources = sources; this.dataDir = dataDir;
+    this.cfg = cfg; this.sources = sources; this.tmdb = tmdb; this.dataDir = dataDir;
     this.mem = {};
     this.loading = new Map();
     this.info = new Map();
@@ -279,6 +279,40 @@ class Vod {
     return m;
   }
 
+  // Plot, cast etc. for one movie: TMDB when a key is set, filled in with whatever the provider knows.
+  async movieInfo(id) {
+    const m = await this.movie(id);
+    const key = 'm:' + m.id;
+    const hit = this.info.get(key);
+    if (hit && Date.now() - hit.at < INFO_TTL) return hit.v;
+    const j = await this.sources._json('get_vod_info', `&vod_id=${encodeURIComponent(m.id)}`).catch(() => null);
+    const p = (j && j.info && !Array.isArray(j.info) && j.info) || {};
+    let t = null, complete = true;
+    if (this.tmdb.configured()) {
+      try {
+        let tid = m.tmdb || String(p.tmdb_id || p.tmdb || '').replace(/^0$/, '');
+        if (!tid && m.title) {
+          const r = await this.tmdb.find('/search/movie', { query: m.title, ...(m.year ? { year: String(m.year) } : {}) });
+          tid = r && r.results && r.results[0] && r.results[0].id;
+        }
+        if (tid) t = await this.tmdb.details(tid);
+      } catch { complete = false; /* show what the provider has, and ask TMDB again next time */ }
+    }
+    const pick = (...v) => v.map((x) => String(x || '').trim()).find(Boolean) || '';
+    const yt = pick(p.youtube_trailer);
+    const v = {
+      id: m.id, name: m.title || m.name, providerName: m.name, category: m.cat, ext: m.ext,
+      year: m.year || (t && t.year) || 0, poster: pick(t && t.poster, p.movie_image, p.cover_big, m.logo),
+      tagline: (t && t.tagline) || '', plot: pick(t && t.overview, p.plot, p.description),
+      genres: pick(t && t.genres, p.genre), director: pick(t && t.director, p.director), cast: pick(t && t.cast, p.cast, p.actors),
+      runtime: (t && t.runtime) || Math.round(num(p.duration_secs) / 60), certification: (t && t.certification) || '',
+      rating: (t && t.rating) || m.rating || 0, gross: this.box.gross('m' + m.id),
+      trailer: pick(t && t.trailer, /^[\w-]{6,20}$/.test(yt) ? 'https://www.youtube.com/watch?v=' + yt : ''),
+    };
+    if (complete) this.info.set(key, { at: Date.now(), v });
+    return v;
+  }
+
   // Season -> episode list for one series (cached briefly).
   async series(id) {
     id = String(id);
@@ -305,7 +339,7 @@ class Vod {
       .map(([season, episodes]) => ({ season, episodes: episodes.sort((a, b) => a.num - b.num) }));
     const info = j.info || {};
     const v = { id, name: (base && (base.title || base.name)) || info.name || 'Series', year: base ? base.year : 0,
-      logo: (base && base.logo) || info.cover || '', plot: info.plot || '', seasons };
+      logo: (base && base.logo) || info.cover || '', plot: info.plot || '', genres: info.genre || '', cast: info.cast || '', director: info.director || '', seasons };
     this.info.set(id, { at: Date.now(), v });
     return v;
   }
