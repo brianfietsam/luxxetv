@@ -302,6 +302,34 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   ok((await fetch(`${base}/api/channels`, { headers: { cookie } })).status === 200, 'login grants access');
   ok((await fetch(`${base}/api/watchlist`)).status === 401 && (await fetch(`${base}/dl/movie/503`)).status === 401, 'movies API and downloads require login');
 
+  // ---- installable app (PWA): the browser fetches these before anyone signs in ----
+  const get = async (p) => { const r = await fetch(base + p); return { status: r.status, type: r.headers.get('content-type') || '', body: Buffer.from(await r.arrayBuffer()) }; };
+  const man = await get('/manifest.webmanifest');
+  const mf = JSON.parse(man.body);
+  ok(man.status === 200 && /manifest\+json/.test(man.type) && mf.display === 'standalone' && mf.start_url === '/', 'web app manifest served');
+  for (const icon of mf.icons) {
+    const r = await get(icon.src);
+    ok(r.status === 200 && r.type === 'image/png' && `${r.body.readUInt32BE(16)}x${r.body.readUInt32BE(20)}` === icon.sizes, `icon ${icon.src} is ${icon.sizes}`);
+  }
+  const worker = await get('/sw.js');
+  ok(worker.status === 200 && /javascript/.test(worker.type), 'service worker served from the site root');
+  ok((await get('/offline.html')).status === 200 && (await get('/icons/apple-touch-icon.png')).status === 200, 'offline page and iPhone icon served');
+
+  // the service worker: offline page when the PC cannot be reached, hands off video and data
+  const handlers = {}, offlinePage = { status: 200, offline: true };
+  let answer = () => Promise.reject(new TypeError('offline'));
+  require('vm').runInNewContext(worker.body.toString(), {
+    URL, Promise, location: { origin: base }, fetch: (r) => answer(r),
+    self: { addEventListener: (n, f) => { handlers[n] = f; } }, caches: { match: async () => offlinePage },
+  });
+  const ask = (p, mode = 'navigate') => { let out = null; handlers.fetch({ request: { url: base + p, method: 'GET', mode }, respondWith: (v) => { out = v; } }); return out; };
+  ok((await ask('/')) === offlinePage, 'offline page when the PC is unreachable');
+  answer = async () => ({ status: 530 });
+  ok((await ask('/')) === offlinePage, 'offline page when a tunnel reports the PC is down');
+  answer = async () => ({ status: 200 });
+  ok((await ask('/')).status === 200, 'live page used when the PC answers');
+  ok(['/api/channels', '/dl?f=x', '/live/1/index.m3u8', '/rec/a.mp4', '/vodplay/x'].every((p) => ask(p) === null) && ask('/app.js', 'no-cors') === null, 'data, video and app files are never intercepted');
+
   await app.shutdown(); mock.close();
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(process.exitCode ? 'FAILED' : 'ALL PASSED');

@@ -427,6 +427,11 @@ h2.sub{font:600 1.1rem/1.2 var(--f-body);margin:18px 0 8px}
   .ep button,.season .sh button{min-height:44px;min-width:44px}
   .next div:nth-child(n+3){display:none}
 }
+/* installed app: keep clear of the notch and the home bar */
+body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+#stage{padding-left:max(var(--pad),env(safe-area-inset-left));padding-right:max(var(--pad),env(safe-area-inset-right));padding-top:max(8px,env(safe-area-inset-top));padding-bottom:max(var(--pad),env(safe-area-inset-bottom))}
+@media (display-mode:standalone){#view-guide{padding-bottom:env(safe-area-inset-bottom)}}
+#install p{margin:0 0 10px}
 /* narrow phones: keep channel names readable */
 @media (max-width:760px){
   :root{--ch:124px}

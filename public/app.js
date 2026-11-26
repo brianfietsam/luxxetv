@@ -611,6 +611,33 @@ async function saveSettings(quiet) {
 $('#setForm').onsubmit = async (e) => { e.preventDefault(); try { await saveSettings(); loadSettings(); } catch (err) { $('#setMsg').textContent = err.message; } };
 
 /* ============================================================
+   INSTALL AS AN APP (PWA)
+   ============================================================ */
+let installPrompt = null;
+function paintInstall() {
+  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  $('#install').hidden = !!window.desktop || installed;   // nothing to offer inside the desktop app or the installed one
+  $('#installBtn').hidden = !installPrompt;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  $('#installHelp').textContent = installPrompt ? 'Put LuxxeTV on this device with its own icon and full screen.'
+    : ios ? 'In Safari, tap Share, then “Add to Home Screen”.'
+      : window.isSecureContext ? 'Open your browser’s menu and choose “Install app” or “Add to Home screen”.'
+        : 'A full install needs an https:// address (see the README). Over plain http, your browser’s “Add to Home screen” makes a shortcut.';
+}
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; paintInstall(); });
+addEventListener('appinstalled', () => { installPrompt = null; $('#install').hidden = true; });
+$('#installBtn').onclick = async () => {
+  const p = installPrompt;
+  if (!p) return;
+  installPrompt = null;   // a prompt can be used only once
+  p.prompt();
+  await p.userChoice;
+  paintInstall();
+};
+paintInstall();
+if ('serviceWorker' in navigator && window.isSecureContext && !window.desktop) navigator.serviceWorker.register('/sw.js').catch(() => { /* the app works without it */ });
+
+/* ============================================================
    BOOT
    ============================================================ */
 (async () => {

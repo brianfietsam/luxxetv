@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
 <title>LuxxeTV</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#171c24">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="LuxxeTV">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -232,6 +240,11 @@
       <button class="solid">save settings</button>
       <p id="setMsg" class="muted"></p>
     </form>
+    <div id="install" class="panel" hidden>
+      <h2>install app</h2>
+      <p id="installHelp" class="muted"></p>
+      <button type="button" id="installBtn" class="solid" hidden>install LuxxeTV</button>
+    </div>
     <div id="urls" class="panel"></div>
     <div id="about" class="panel"></div>
   </section>

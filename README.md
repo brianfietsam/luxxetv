@@ -52,6 +52,12 @@ Open **Settings**, enter your playlist, pick a save folder, press *Test & reload
 - **Away from home:** the Tesla browser can't run a VPN, so expose the port with a tunnel, e.g. Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:8484`) – **set a web password in Settings first**. Without a password the server only accepts private-network, non-proxied requests.
 - Tesla only plays video while parked. Pick a lower *Live stream quality* (480p/720p) on cellular.
 
+### Install it as an app
+The web player is a PWA: it gets its own icon, opens full screen, and shows a *Can't reach your LuxxeTV PC* page when the PC is off.
+- **Android / desktop Chrome or Edge:** open it, then **Settings → install app** (or the browser menu → *Install app*).
+- **iPhone / iPad:** open it in Safari, tap **Share → Add to Home Screen**. Sign in once inside the installed app.
+- Browsers only allow a full install over **https** (or `localhost`). A plain `http://<PC-IP>:8484/` address gives a home-screen shortcut instead; for the real app use the https address of your tunnel (see above; set a web password first). A quick `trycloudflare.com` address changes every run, so give the tunnel a fixed hostname before installing.
+
 ## Version
 The app version, git commit, environment and build date are shown in **Settings → About**. `npm run dist` stamps the commit and build date into the installer.
 
