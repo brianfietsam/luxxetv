@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#171c24">
+<title>LuxxeTV - not connected</title>
+<style>
+  html,body{height:100%}
+  body{margin:0;display:grid;place-items:center;background:#0e1116;color:#e8ecf2;font:400 17px/1.5 system-ui,sans-serif;text-align:center}
+  main{padding:24px;max-width:360px}
+  img{width:96px;height:96px;border-radius:22px}
+  h1{font-size:1.4rem;margin:16px 0 8px}
+  p{color:#8b95a7;margin:0 0 20px}
+  button{font:inherit;min-height:52px;padding:0 28px;border:0;border-radius:10px;background:#e5484d;color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+  <img src="/icons/icon-192.png" alt="">
+  <h1>Can't reach your LuxxeTV PC</h1>
+  <p>Check that the PC is on, LuxxeTV is running and this device is connected.</p>
+  <button type="button" onclick="location.reload()">try again</button>
+</main>
+<script>addEventListener('online', () => location.reload());</script>
+</body>
+</html>
