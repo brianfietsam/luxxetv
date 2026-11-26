@@ -129,6 +129,21 @@ class Sources {
     return `${this._base()}/live/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${ch.id}.ts`;
   }
 
+  // ---- VOD (movies) ----
+  async vodStreams() {
+    const s = this.cfg.get().source;
+    if (s.type !== 'xtream') throw new Error('Automatic movie downloads need an Xtream Codes playlist');
+    if (!s.server || !s.username) throw new Error('Xtream server/username not configured');
+    const j = await this._json('get_vod_streams');
+    if (!Array.isArray(j)) throw new Error('Login rejected or unexpected response from server');
+    return j;
+  }
+
+  vodUrl(streamId, ext) {
+    const s = this.cfg.get().source;
+    return `${this._base()}/movie/${encodeURIComponent(s.username)}/${encodeURIComponent(s.password)}/${encodeURIComponent(streamId)}.${ext}`;
+  }
+
   async epg(id) {
     const s = this.cfg.get().source;
     if (s.type !== 'xtream') return [];

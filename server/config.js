@@ -19,6 +19,10 @@ const DEFAULTS = {
   maxLiveSessions: 2,
   hiddenCategories: [],
   epgUrl: '',                // optional XMLTV override; blank = auto
+  tmdbKey: '',               // themoviedb.org API key (v3) or read access token (v4)
+  tmdbRegion: 'US',          // country used for theatrical / streaming release dates
+  movieDir: '',              // blank = <recordDir>/Movies
+  movieCheckHours: 3,        // how often to look for watched movies on the provider
   userAgent: 'VLC/3.0.20 LibVLC/3.0.20',
   sessionSecret: '',
 };
