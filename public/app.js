@@ -286,6 +286,25 @@ setInterval(tickProgress, 30000);
 setInterval(() => { if (view === 'guide' && $('#stage').hidden && $('#menu').hidden && $('#rows').scrollTop < 40) loadGuide(true); }, 10 * 60000);
 let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => view === 'guide' && loadGuide(true), 300); });
 
+/* ---------- share a channel as an M3U link ---------- */
+async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch { /* fall through */ }
+  const ta = el('textarea', { value: text, readOnly: true });
+  Object.assign(ta.style, { position: 'fixed', top: '0', left: '0', opacity: '0' });
+  document.body.append(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+  let done = false;
+  try { done = document.execCommand('copy'); } catch { done = false; }
+  ta.remove();
+  return done;
+}
+async function shareChannel(ch) {
+  try {
+    const r = await api('/api/share/' + encodeURIComponent(ch.id));
+    if (await copyText(r.url)) toast(`Provider link for ${ch.name} copied. It includes your provider login`);
+    else window.prompt('Copy this provider link for ' + ch.name, r.url);   // no clipboard access (plain http on some browsers)
+  } catch (e) { toast(e.message, true); }
+}
+
 /* ---------- action sheet: click, right-click or long-press a program ---------- */
 function closeMenu() { $('#menu').hidden = true; }
 function openMenu(ev, row, p, tile) {
@@ -298,6 +317,7 @@ function openMenu(ev, row, p, tile) {
     el('div', { className: 'muted', textContent: `${row.name} · ${dayLabel(p.s)} ${clock(p.s)} to ${clock(p.e)}${airing ? ' · on now' : ''}` }),
     p.d ? el('p', { textContent: p.d }) : null)];
   if (airing) items.push(act('watch now', 'go', () => playChannel(row)));
+  items.push(act('copy m3u link for ' + row.name, '', () => shareChannel(row)));
   if (existing) items.push(act('cancel this recording', '', () => unschedule(existing, tile)));
   else {
     items.push(act(airing ? 'record from now' : 'record', '', () => schedule(row, p, 'none', tile), true));
@@ -400,7 +420,8 @@ function playChannel(ch) {
     try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +sel.value, title: await nowTitle(ch.id) } }); rec.textContent = '● recording'; toast('Recording ' + ch.name); pollStatus(); }
     catch (e) { toast(e.message, true); }
   };
-  openStage(ch.name, [favBtn, sel, rec,
+  const share = el('button', { type: 'button', textContent: '⧉ copy m3u link', title: 'Copy the provider stream link (includes your provider login)', onclick: () => shareChannel(ch) });
+  openStage(ch.name, [favBtn, share, sel, rec,
     el('button', { type: 'button', textContent: '▲ previous', onclick: () => zap(-1) }),
     el('button', { type: 'button', textContent: '▼ next', onclick: () => zap(1) })],
   `/live/${encodeURIComponent(ch.id)}/index.m3u8`);

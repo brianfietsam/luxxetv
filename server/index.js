@@ -275,20 +275,30 @@ async function start({ dataDir, port }) {
   });
 
   // ---- live HLS for the web player ----
-  app.get('/live/:id/index.m3u8', wrap(async (req, res) => {
-    const s = await live.ensure(req.params.id);
+  async function sendLivePlaylist(id, res) {
+    const s = await live.ensure(id);
     const f = await live.waitPlaylist(s);
     if (!f) return res.status(502).json({ error: 'Stream failed to start', detail: s.err.split('\n').pop() });
-    live.touch(req.params.id);
+    live.touch(id);
     res.set({ 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'no-store' });
     res.send(fs.readFileSync(f));
-  }));
-  app.get('/live/:id/:file', (req, res) => {
-    if (!/^seg_\d+\.ts$/.test(req.params.file)) return res.status(404).end();
-    live.touch(req.params.id);
+  }
+  function sendLiveSegment(id, file, res) {
+    if (!/^seg_\d+\.ts$/.test(file)) return res.status(404).end();
+    live.touch(id);
     res.set('Cache-Control', 'no-store');
-    res.sendFile(path.join(live.dirFor(req.params.id), req.params.file), (err) => { if (err && !res.headersSent) res.status(404).end(); });
-  });
+    res.sendFile(path.join(live.dirFor(id), file), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+  }
+  app.get('/live/:id/index.m3u8', wrap((req, res) => sendLivePlaylist(req.params.id, res)));
+  app.get('/live/:id/:file', (req, res) => sendLiveSegment(req.params.id, req.params.file, res));
+
+  // Direct provider link for one channel, for sharing with other players (VLC, TiviMate…).
+  // It contains the provider login, so it is only handed to signed-in users and only on request.
+  app.get('/api/share/:id', wrap(async (req, res) => {
+    const ch = await sources.getChannel(req.params.id);
+    if (!ch) return res.status(404).json({ error: 'Unknown channel' });
+    res.json({ url: await sources.streamUrl(ch.id), name: ch.name });
+  }));
 
   // ---- watch movies / episodes in the browser ----
   // key = "m-<movieId>" or "e-<episodeId>"; direct = provider file passed through (seekable), hls = ffmpeg-converted fallback

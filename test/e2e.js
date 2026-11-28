@@ -301,6 +301,16 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   const cookie = good.headers.get('set-cookie').split(';')[0];
   ok((await fetch(`${base}/api/channels`, { headers: { cookie } })).status === 200, 'login grants access');
   ok((await fetch(`${base}/api/watchlist`)).status === 401 && (await fetch(`${base}/dl/movie/503`)).status === 401, 'movies API and downloads require login');
+  const j2 = async (u) => (await fetch(base + u, { headers: { cookie } })).json();
+
+  // ---- copy a channel's direct provider link (signed-in users only) ----
+  ok((await fetch(`${base}/api/share/2`)).status === 401, 'provider link needs login');
+  const sh = await j2('/api/share/2');
+  ok(sh.url === 'http://127.0.0.1:9099/live/u/p/2.ts' && sh.name === 'Second Channel', 'direct provider link for the channel');
+  const ac = new AbortController(), pr = await fetch(sh.url, { signal: ac.signal });
+  const first = await pr.body.getReader().read(); ac.abort();   // a live stream never ends: one chunk is enough
+  ok(pr.status === 200 && first.value && first.value.length > 0, 'provider link plays straight from the provider');
+  ok((await fetch(`${base}/api/share/nope`, { headers: { cookie } })).status === 404, 'unknown channel has no link');
 
   // ---- installable app (PWA): the browser fetches these before anyone signs in ----
   const get = async (p) => { const r = await fetch(base + p); return { status: r.status, type: r.headers.get('content-type') || '', body: Buffer.from(await r.arrayBuffer()) }; };

@@ -7,6 +7,7 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
 ## Features
 - Xtream Codes (server/user/pass) or M3U URL; category filter, search, EPG now/next
 - **Guide-first layout:** categories in a left rail (Favorites on top), the TV guide on the right with 2-3 hours of program titles per channel. Click a channel to watch; right-click (or tap / long-press) a program to record it once, daily or weekly. Scheduled programs show a red dot. Guide data is the provider's XMLTV feed (~3 days ahead); set a custom guide URL in Settings if your provider has none.
+- **Share a channel:** *copy m3u link* (in the player, or a program's menu in the guide) copies that channel's direct provider stream link, which opens in VLC, TiviMate or any IPTV app. **The link contains your provider username and password**: anyone you give it to can use your provider account and its connection limit. Only signed-in users can copy it.
 - **Favorites:** star any channel; stored on the PC, so every device sees the same list
 - **Look:** Metro-style flat tiles, giant light lowercase headings, one accent color (pick it per device in Settings, plus night/day). Dim by default for a dark car cabin
 - Keyboard: `/` search, `Esc` close, Up/Down change channel in the player
@@ -32,7 +33,7 @@ Architecture follows the same idea as Fredolx's [open-tv](https://github.com/Fre
   - Search any movie to add it
 - **Auto-download watchlist**: tap *＋ Download when available* and LuxxeTV checks your Xtream provider's movie library every few hours (configurable) and downloads the movie as soon as it appears, to `<Download folder>\Movies` by default (so they also appear in the Downloads tab). CAM/telesync copies are skipped; a 1080p copy is preferred over 4K; interrupted downloads resume. Downloaded MP4s play in the web player. Needs an Xtream Codes playlist (M3U playlists don't expose a movie library).
 - Web player: live TV is restreamed as H.264/AAC HLS (Tesla-compatible); recordings play with seeking
-- Provider credentials stay on the PC; the web UI never sees them
+- Provider credentials stay on the PC; the web UI only sees them when you copy a channel's provider link
 - Closing the window hides to tray so scheduled recordings keep running
 
 ## Run
