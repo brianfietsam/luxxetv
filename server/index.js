@@ -92,39 +92,6 @@ async function start({ dataDir, port }) {
   app.use(express.static(PUBLIC));
   app.get('/vendor/hls.min.js', (req, res) => res.sendFile(HLS_JS));
 
-  // ---- shareable per-channel M3U links ----
-  // /share/<channel>/<sig>/channel.m3u works without the web password (VLC, TiviMate, a friend's phone),
-  // but only for that one channel, and the provider URL/credentials never leave this PC: the playlist
-  // points back at this server's own restream. Settings → "reset share links" revokes every link.
-  const shareSig = (id) => crypto.createHmac('sha256', cfg.get().sessionSecret)
-    .update('luxxetv-share:' + (cfg.get().shareKey || '') + ':' + id).digest('hex').slice(0, 32);
-  const shareOk = (id, sig) => {
-    const a = Buffer.from(String(sig || '')), b = Buffer.from(shareSig(id));
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
-  };
-  const sharePath = (id) => `/share/${encodeURIComponent(id)}/${shareSig(id)}`;
-  const originOf = (req) => {
-    const proto = String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0].trim() === 'https' ? 'https' : 'http';
-    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    return /^[\w.\-]+(:\d+)?$|^\[[\da-f:.]+\](:\d+)?$/i.test(host) ? `${proto}://${host}` : '';
-  };
-  const m3uText = (v) => String(v || '').replace(/[\r\n"]/g, ' ').trim();
-  const shareGuard = (req, res, next) => (shareOk(req.params.id, req.params.sig) ? next() : res.status(404).send('This share link is not valid (it may have been reset).'));
-  app.get('/share/:id/:sig/channel.m3u', shareGuard, wrap(async (req, res) => {
-    const ch = await sources.getChannel(req.params.id);
-    if (!ch) return res.status(404).send('This channel is no longer in the playlist.');
-    const name = m3uText(ch.name) || 'Channel';
-    const body = '#EXTM3U\n'
-      + `#EXTINF:-1 tvg-id="${m3uText(ch.epgId)}" tvg-name="${name}" tvg-logo="${m3uText(ch.logo)}" group-title="${m3uText(ch.cat)}",${name}\n`
-      + `${originOf(req)}${sharePath(ch.id)}/index.m3u8\n`;
-    const file = (name.replace(/[^\w .-]+/g, '').trim() || 'channel') + '.m3u';
-    res.set({ 'Content-Type': 'audio/x-mpegurl; charset=utf-8', 'Cache-Control': 'no-store',
-      'Content-Disposition': `inline; filename="${file}"` });
-    res.send(body);
-  }));
-  app.get('/share/:id/:sig/index.m3u8', shareGuard, wrap((req, res) => sendLivePlaylist(req.params.id, res)));
-  app.get('/share/:id/:sig/:file', shareGuard, (req, res) => sendLiveSegment(req.params.id, req.params.file, res));
-
   const guard = (req, res, next) => (authed(req) ? next() : res.status(401).json({ error: 'auth' }));
   app.use(['/api', '/live', '/rec', '/dl', '/vodplay'], guard);
 
@@ -307,7 +274,7 @@ async function start({ dataDir, port }) {
     res.sendFile(f);
   });
 
-  // ---- live HLS for the web player (also served to share links) ----
+  // ---- live HLS for the web player ----
   async function sendLivePlaylist(id, res) {
     const s = await live.ensure(id);
     const f = await live.waitPlaylist(s);
@@ -325,16 +292,13 @@ async function start({ dataDir, port }) {
   app.get('/live/:id/index.m3u8', wrap((req, res) => sendLivePlaylist(req.params.id, res)));
   app.get('/live/:id/:file', (req, res) => sendLiveSegment(req.params.id, req.params.file, res));
 
-  // share link for one channel (signed-in users only); the client adds its own origin
+  // Direct provider link for one channel, for sharing with other players (VLC, TiviMate…).
+  // It contains the provider login, so it is only handed to signed-in users and only on request.
   app.get('/api/share/:id', wrap(async (req, res) => {
     const ch = await sources.getChannel(req.params.id);
     if (!ch) return res.status(404).json({ error: 'Unknown channel' });
-    res.json({ path: sharePath(ch.id) + '/channel.m3u', name: ch.name, lanOnly: !cfg.get().webPassword });
+    res.json({ url: await sources.streamUrl(ch.id), name: ch.name });
   }));
-  app.post('/api/share/reset', (req, res) => {
-    cfg.update({ shareKey: crypto.randomBytes(16).toString('hex') });
-    res.json({ ok: true });
-  });
 
   // ---- watch movies / episodes in the browser ----
   // key = "m-<movieId>" or "e-<episodeId>"; direct = provider file passed through (seekable), hls = ffmpeg-converted fallback
@@ -379,7 +343,7 @@ async function start({ dataDir, port }) {
   // ---- settings / system ----
   app.get('/api/settings', (req, res) => {
     const c = JSON.parse(JSON.stringify(cfg.get()));
-    delete c.sessionSecret; delete c.shareKey;
+    delete c.sessionSecret;
     c.source.passwordSet = !!c.source.password; c.source.password = '';
     c.webPasswordSet = !!c.webPassword; c.webPassword = '';
     c.tmdbKeySet = !!c.tmdbKey; c.tmdbKey = '';
@@ -387,7 +351,7 @@ async function start({ dataDir, port }) {
   });
   app.put('/api/settings', wrap(async (req, res) => {
     const p = { ...req.body };
-    delete p.sessionSecret; delete p.shareKey;
+    delete p.sessionSecret;
     if (p.source && !p.source.password) delete p.source.password;      // blank = keep
     if (p.webPassword === '') delete p.webPassword;                    // blank = keep
     if (p.clearWebPassword) { p.webPassword = ''; delete p.clearWebPassword; }

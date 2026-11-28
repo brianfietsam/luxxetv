@@ -300,9 +300,8 @@ async function copyText(text) {
 async function shareChannel(ch) {
   try {
     const r = await api('/api/share/' + encodeURIComponent(ch.id));
-    const url = location.origin + r.path;
-    if (await copyText(url)) toast(`M3U link for ${ch.name} copied${r.lanOnly ? '. Works on your home network only until you set a web password' : ''}`);
-    else window.prompt('Copy this M3U link for ' + ch.name, url);   // no clipboard access (plain http on some browsers)
+    if (await copyText(r.url)) toast(`Provider link for ${ch.name} copied. It includes your provider login`);
+    else window.prompt('Copy this provider link for ' + ch.name, r.url);   // no clipboard access (plain http on some browsers)
   } catch (e) { toast(e.message, true); }
 }
 
@@ -421,7 +420,7 @@ function playChannel(ch) {
     try { await api('/api/record', { method: 'POST', body: { channelId: ch.id, minutes: +sel.value, title: await nowTitle(ch.id) } }); rec.textContent = '● recording'; toast('Recording ' + ch.name); pollStatus(); }
     catch (e) { toast(e.message, true); }
   };
-  const share = el('button', { type: 'button', textContent: '⧉ copy m3u link', title: 'Copy a link others can open in VLC or an IPTV app', onclick: () => shareChannel(ch) });
+  const share = el('button', { type: 'button', textContent: '⧉ copy m3u link', title: 'Copy the provider stream link (includes your provider login)', onclick: () => shareChannel(ch) });
   openStage(ch.name, [favBtn, share, sel, rec,
     el('button', { type: 'button', textContent: '▲ previous', onclick: () => zap(-1) }),
     el('button', { type: 'button', textContent: '▼ next', onclick: () => zap(1) })],
@@ -630,11 +629,6 @@ async function saveSettings(quiet) {
   const r = await api('/api/settings', { method: 'PUT', body });
   if (!quiet) $('#setMsg').textContent = r.restartNeeded ? 'Saved. Restart the app for port/network changes.' : 'Saved.';
 }
-$('#shareReset').onclick = async () => {
-  if (!confirm('Stop every channel link you have shared? New links will be different.')) return;
-  try { await api('/api/share/reset', { method: 'POST' }); $('#shareMsg').textContent = '✔ All share links reset. Old links no longer work.'; }
-  catch (e) { $('#shareMsg').textContent = '✘ ' + e.message; }
-};
 $('#setForm').onsubmit = async (e) => { e.preventDefault(); try { await saveSettings(); loadSettings(); } catch (err) { $('#setMsg').textContent = err.message; } };
 
 /* ============================================================

@@ -303,32 +303,14 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   ok((await fetch(`${base}/api/watchlist`)).status === 401 && (await fetch(`${base}/dl/movie/503`)).status === 401, 'movies API and downloads require login');
   const j2 = async (u) => (await fetch(base + u, { headers: { cookie } })).json();
 
-  // ---- share links: one channel, playable by anyone holding the link, nothing else ----
-  ok((await fetch(`${base}/api/share/2`)).status === 401, 'creating a share link needs login');
+  // ---- copy a channel's direct provider link (signed-in users only) ----
+  ok((await fetch(`${base}/api/share/2`)).status === 401, 'provider link needs login');
   const sh = await j2('/api/share/2');
-  ok(/^\/share\/2\/[0-9a-f]{32}\/channel\.m3u$/.test(sh.path) && sh.name === 'Second Channel' && sh.lanOnly === false, 'share link issued for a channel');
-  const shm = await fetch(base + sh.path);
-  const shText = await shm.text();
-  const shUrl = shText.split('\n').find((l) => l.startsWith('http'));
-  ok(shm.status === 200 && /mpegurl/.test(shm.headers.get('content-type')) && shText.startsWith('#EXTM3U') && shText.includes(',Second Channel'), 'share m3u opens without login');
-  ok(shUrl === `${base}${sh.path.replace('channel.m3u', 'index.m3u8')}` && !/\/u\/p\/|9099/.test(shText), 'share m3u points at this server, never the provider');
-  const fwd = await (await fetch(base + sh.path, { headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'tv.example.com' } })).text();
-  ok(fwd.includes('https://tv.example.com/share/2/'), 'share m3u uses the tunnel address it was opened through');
-  const shl = await fetch(shUrl);
-  const shlText = await shl.text();
-  const shSeg = shlText.split('\n').find((l) => l.endsWith('.ts'));
-  ok(shl.status === 200 && shlText.includes('#EXTM3U') && shSeg, 'shared stream plays without login');
-  const shs = await fetch(shUrl.replace('index.m3u8', shSeg));
-  ok(shs.status === 200 && (await shs.arrayBuffer()).byteLength > 1000, 'shared stream segment served');
-  const sig = sh.path.split('/')[3];
-  ok((await fetch(`${base}/share/1/${sig}/channel.m3u`)).status === 404 && (await fetch(`${base}/share/1/${sig}/index.m3u8`)).status === 404, 'a share link only unlocks its own channel');
-  ok((await fetch(shUrl.replace('index.m3u8', '..%2F..%2Fconfig.json'))).status === 404 && (await fetch(shUrl.replace('index.m3u8', 'seg_1.ts.mp4'))).status === 404, 'a share link serves only stream segments');
-  ok((await fetch(`${base}/api/share/reset`, { method: 'POST' })).status === 401, 'resetting share links needs login');
-  await fetch(`${base}/api/share/reset`, { method: 'POST', headers: { cookie } });
-  ok((await fetch(base + sh.path)).status === 404 && (await fetch(shUrl)).status === 404, 'reset revokes old share links');
-  const sh2 = await j2('/api/share/2');
-  ok(sh2.path !== sh.path && (await fetch(base + sh2.path)).status === 200, 'new share link works after reset');
-  ok(!JSON.stringify(await j2('/api/settings')).includes('shareKey'), 'share key not exposed by settings API');
+  ok(sh.url === 'http://127.0.0.1:9099/live/u/p/2.ts' && sh.name === 'Second Channel', 'direct provider link for the channel');
+  const ac = new AbortController(), pr = await fetch(sh.url, { signal: ac.signal });
+  const first = await pr.body.getReader().read(); ac.abort();   // a live stream never ends: one chunk is enough
+  ok(pr.status === 200 && first.value && first.value.length > 0, 'provider link plays straight from the provider');
+  ok((await fetch(`${base}/api/share/nope`, { headers: { cookie } })).status === 404, 'unknown channel has no link');
 
   // ---- installable app (PWA): the browser fetches these before anyone signs in ----
   const get = async (p) => { const r = await fetch(base + p); return { status: r.status, type: r.headers.get('content-type') || '', body: Buffer.from(await r.arrayBuffer()) }; };
@@ -356,7 +338,7 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
   ok((await ask('/')) === offlinePage, 'offline page when a tunnel reports the PC is down');
   answer = async () => ({ status: 200 });
   ok((await ask('/')).status === 200, 'live page used when the PC answers');
-  ok(['/api/channels', '/dl?f=x', '/live/1/index.m3u8', '/share/1/x/channel.m3u', '/rec/a.mp4', '/vodplay/x'].every((p) => ask(p) === null) && ask('/app.js', 'no-cors') === null, 'data, video and app files are never intercepted');
+  ok(['/api/channels', '/dl?f=x', '/live/1/index.m3u8', '/rec/a.mp4', '/vodplay/x'].every((p) => ask(p) === null) && ask('/app.js', 'no-cors') === null, 'data, video and app files are never intercepted');
 
   await app.shutdown(); mock.close();
   fs.rmSync(tmp, { recursive: true, force: true });

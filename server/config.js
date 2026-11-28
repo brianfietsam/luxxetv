@@ -30,7 +30,6 @@ const DEFAULTS = {
   movieDir: '',              // watchlist downloads; blank = <downloadDir>/Movies
   movieCheckHours: 3,        // how often to look for watched movies on the provider
   userAgent: 'VLC/3.0.20 LibVLC/3.0.20',
-  shareKey: '',              // part of every share-link signature; changing it revokes all share links
   sessionSecret: '',
 };
 
