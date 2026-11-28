@@ -1,6 +1,6 @@
 {
   "name": "luxxetv",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "LuxxeTV - Xtream Codes DVR with a Tesla-friendly web player",
   "main": "electron/main.js",
   "scripts": {

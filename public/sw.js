@@ -1,10 +1,10 @@
 'use strict';
 // Makes LuxxeTV installable and shows a friendly page when the PC cannot be reached.
 // Nothing else is cached: the app always loads fresh from the PC, so updates show up at once.
-const CACHE = 'luxxetv-offline-v1';
+const CACHE = 'luxxetv-offline-v2';
 const OFFLINE = '/offline.html';
 const KEEP = [OFFLINE, '/icons/icon-192.png'];
-const STREAMS = /^\/(api|live|rec|dl|vodplay)(\/|$)/;           // video, downloads and data go straight to the network
+const STREAMS = /^\/(api|live|share|rec|dl|vodplay)(\/|$)/;           // video, downloads and data go straight to the network
 const UNREACHABLE = (status) => status >= 502 && status <= 530;  // a tunnel answering for a PC that is off
 
 self.addEventListener('install', (e) => {
